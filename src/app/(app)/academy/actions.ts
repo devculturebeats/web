@@ -33,11 +33,13 @@ export async function createMarketplaceClass(
   const teacherId = (formData.get("teacher_id") as string)?.trim() || null;
   const batchId = (formData.get("batch_id") as string)?.trim() || null;
   const description = (formData.get("description") as string)?.trim() || null;
-  const locationType = (formData.get("location_type") as string)?.trim() || "at_org";
+  const locationType =
+    (formData.get("location_type") as string)?.trim() || "at_org";
   const rateRaw = (formData.get("rate_amount") as string)?.trim();
   const rateUnit = (formData.get("rate_unit") as string)?.trim() || "session";
   const maxRaw = (formData.get("max_students") as string)?.trim();
-  const recurringWeeks = parseInt(formData.get("recurring_weeks") as string, 10) || 0;
+  const recurringWeeks =
+    parseInt(formData.get("recurring_weeks") as string, 10) || 0;
 
   if (!title || !skill || !startsAt || !endsAt) {
     return { error: "Title, skill, and session times are required." };
