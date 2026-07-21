@@ -1,0 +1,1115 @@
+"use client";
+
+import { useMemo, useState, useTransition } from "react";
+import { ChevronDownIcon, ChevronUpIcon, Trash2Icon } from "lucide-react";
+import { toast } from "sonner";
+
+import {
+  addNote,
+  cancelClass,
+  cancelSessionsScoped,
+  deleteNote,
+  markAttendance,
+  postponeSessionTo,
+  rescheduleSession,
+  scheduleClassSessions,
+  updateSessionStatus,
+} from "@/app/(app)/classes/[id]/actions";
+import { EnrollWithSlots } from "@/components/student/enroll-with-slots";
+import { LifecycleBadge } from "@/components/lifecycle-badge";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
+import { Button } from "@/components/ui/button";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Textarea } from "@/components/ui/textarea";
+import { DAYS_OF_WEEK } from "@/lib/constants";
+import {
+  formatDateTime,
+  formatTime,
+  fromDatetimeLocalValue,
+  toDatetimeLocalValue,
+} from "@/lib/dates";
+import type { ClassLifecycle, ClassSession, SessionScope } from "@/types/database";
+
+export type ClassRosterEntry = {
+  profileId: string;
+  fullName: string;
+  source: string;
+};
+
+export type ClassNoteEntry = {
+  id: string;
+  body: string;
+  authorId: string | null;
+  authorName: string;
+  createdAt: string;
+};
+
+export type ClassDetailData = {
+  id: string;
+  title: string;
+  skill: string | null;
+  description: string | null;
+  status: ClassLifecycle;
+  enrollmentMode: string;
+  isRecurring: boolean;
+  isHomeStudio: boolean;
+  startsAt: string | null;
+  endsAt: string | null;
+  proposedDayOfWeek: number | null;
+  proposedStartTime: string | null;
+  proposedEndTime: string | null;
+  cancellationReason: string | null;
+  rateLabel: string | null;
+  locationLabel: string | null;
+  locationNote: string | null;
+  maxStudents: number | null;
+  org: { id: string; name: string; type: string } | null;
+  teacher: { id: string; name: string } | null;
+  sessions: ClassSession[];
+  roster: ClassRosterEntry[];
+  attendanceBySession: Record<string, Record<string, boolean>>;
+  rosterBySession: Record<string, ClassRosterEntry[]>;
+  notes: ClassNoteEntry[];
+  canManage: boolean;
+  canEnroll: boolean;
+  isEnrolled: boolean;
+  currentUserId: string;
+};
+
+type ClassDetailProps = {
+  data: ClassDetailData;
+};
+
+function ScopeRadioGroup({
+  value,
+  onChange,
+  showSeries,
+  idPrefix,
+}: {
+  value: SessionScope;
+  onChange: (scope: SessionScope) => void;
+  showSeries: boolean;
+  idPrefix: string;
+}) {
+  if (!showSeries) return null;
+
+  const oneId = `${idPrefix}-scope-one`;
+  const seriesId = `${idPrefix}-scope-series`;
+
+  return (
+    <RadioGroup
+      value={value}
+      onValueChange={(v) => onChange(v as SessionScope)}
+      className="gap-2"
+    >
+      <div className="flex items-center gap-2">
+        <RadioGroupItem value="one" id={oneId} />
+        <Label htmlFor={oneId} className="font-normal">
+          This session only
+        </Label>
+      </div>
+      <div className="flex items-center gap-2">
+        <RadioGroupItem value="series" id={seriesId} />
+        <Label htmlFor={seriesId} className="font-normal">
+          This and following in series
+        </Label>
+      </div>
+    </RadioGroup>
+  );
+}
+
+function AttendancePanel({
+  sessionId,
+  roster,
+  initialAttendance,
+}: {
+  sessionId: string;
+  roster: ClassRosterEntry[];
+  initialAttendance: Record<string, boolean>;
+}) {
+  const [isPending, startTransition] = useTransition();
+  const [open, setOpen] = useState(false);
+  const [attendance, setAttendance] = useState<Record<string, boolean>>(() => {
+    const map: Record<string, boolean> = {};
+    for (const student of roster) {
+      map[student.profileId] = initialAttendance[student.profileId] ?? false;
+    }
+    return map;
+  });
+
+  const handleSave = () => {
+    startTransition(async () => {
+      const records = roster.map((student) => ({
+        studentProfileId: student.profileId,
+        present: attendance[student.profileId] ?? false,
+      }));
+      const result = await markAttendance(sessionId, records);
+      if (result.error) {
+        toast.error(result.error);
+        return;
+      }
+      toast.success("Attendance saved");
+    });
+  };
+
+  if (roster.length === 0) {
+    return (
+      <p className="text-sm text-muted-foreground">No enrolled students yet.</p>
+    );
+  }
+
+  return (
+    <div className="space-y-3 rounded-lg border bg-muted/30 p-3">
+      <button
+        type="button"
+        className="flex w-full items-center justify-between text-sm font-medium"
+        onClick={() => setOpen((value) => !value)}
+      >
+        Mark attendance
+        {open ? (
+          <ChevronUpIcon className="size-4" />
+        ) : (
+          <ChevronDownIcon className="size-4" />
+        )}
+      </button>
+      {open && (
+        <div className="space-y-3">
+          <div className="space-y-2">
+            {roster.map((student) => (
+              <div key={student.profileId} className="flex items-center gap-2">
+                <Checkbox
+                  id={`${sessionId}-${student.profileId}`}
+                  checked={attendance[student.profileId] ?? false}
+                  onCheckedChange={(checked) =>
+                    setAttendance((prev) => ({
+                      ...prev,
+                      [student.profileId]: checked === true,
+                    }))
+                  }
+                />
+                <Label
+                  htmlFor={`${sessionId}-${student.profileId}`}
+                  className="font-normal"
+                >
+                  {student.fullName}
+                </Label>
+              </div>
+            ))}
+          </div>
+          <Button size="sm" disabled={isPending} onClick={handleSave}>
+            Save attendance
+          </Button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function PostponeToPanel({ session }: { session: ClassSession }) {
+  const [isPending, startTransition] = useTransition();
+  const [open, setOpen] = useState(false);
+  const [startsAt, setStartsAt] = useState(() =>
+    toDatetimeLocalValue(session.starts_at),
+  );
+  const [endsAt, setEndsAt] = useState(() =>
+    toDatetimeLocalValue(session.ends_at),
+  );
+
+  const handlePostpone = () => {
+    startTransition(async () => {
+      const result = await postponeSessionTo(
+        session.id,
+        fromDatetimeLocalValue(startsAt),
+        fromDatetimeLocalValue(endsAt),
+      );
+      if (result.error) {
+        toast.error(result.error);
+        return;
+      }
+      toast.success("Session postponed to the new time");
+      setOpen(false);
+    });
+  };
+
+  return (
+    <div className="space-y-3 rounded-lg border border-dashed p-3">
+      <button
+        type="button"
+        className="flex w-full items-center justify-between text-sm font-medium"
+        onClick={() => setOpen((value) => !value)}
+      >
+        Postpone to…
+        {open ? (
+          <ChevronUpIcon className="size-4" />
+        ) : (
+          <ChevronDownIcon className="size-4" />
+        )}
+      </button>
+      {open && (
+        <div className="space-y-3">
+          <p className="text-xs text-muted-foreground">
+            Choose the new date and time for this session.
+          </p>
+          <div className="space-y-2">
+            <Label htmlFor={`postpone-start-${session.id}`}>New start</Label>
+            <Input
+              id={`postpone-start-${session.id}`}
+              type="datetime-local"
+              value={startsAt}
+              onChange={(event) => setStartsAt(event.target.value)}
+            />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor={`postpone-end-${session.id}`}>New end</Label>
+            <Input
+              id={`postpone-end-${session.id}`}
+              type="datetime-local"
+              value={endsAt}
+              onChange={(event) => setEndsAt(event.target.value)}
+            />
+          </div>
+          <Button size="sm" disabled={isPending} onClick={handlePostpone}>
+            {isPending ? "Saving…" : "Postpone to this time"}
+          </Button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ReschedulePanel({
+  session,
+  showSeries,
+}: {
+  session: ClassSession;
+  showSeries: boolean;
+}) {
+  const [isPending, startTransition] = useTransition();
+  const [open, setOpen] = useState(false);
+  const [scope, setScope] = useState<SessionScope>("one");
+  const [startsAt, setStartsAt] = useState(() =>
+    toDatetimeLocalValue(session.starts_at),
+  );
+  const [endsAt, setEndsAt] = useState(() =>
+    toDatetimeLocalValue(session.ends_at),
+  );
+
+  const handleReschedule = () => {
+    startTransition(async () => {
+      const result = await rescheduleSession(
+        session.id,
+        fromDatetimeLocalValue(startsAt),
+        fromDatetimeLocalValue(endsAt),
+        scope,
+      );
+      if (result.error) {
+        toast.error(result.error);
+        return;
+      }
+      toast.success(
+        scope === "series" ? "Series rescheduled" : "Session rescheduled",
+      );
+      setOpen(false);
+    });
+  };
+
+  return (
+    <div className="space-y-3 rounded-lg border border-dashed p-3">
+      <button
+        type="button"
+        className="flex w-full items-center justify-between text-sm font-medium"
+        onClick={() => setOpen((value) => !value)}
+      >
+        Reschedule session
+        {open ? (
+          <ChevronUpIcon className="size-4" />
+        ) : (
+          <ChevronDownIcon className="size-4" />
+        )}
+      </button>
+      {open && (
+        <div className="space-y-3">
+          <ScopeRadioGroup
+            idPrefix={`reschedule-${session.id}`}
+            value={scope}
+            onChange={setScope}
+            showSeries={showSeries}
+          />
+          <div className="space-y-2">
+            <Label htmlFor={`starts-${session.id}`}>New start</Label>
+            <Input
+              id={`starts-${session.id}`}
+              type="datetime-local"
+              value={startsAt}
+              onChange={(event) => setStartsAt(event.target.value)}
+            />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor={`ends-${session.id}`}>New end</Label>
+            <Input
+              id={`ends-${session.id}`}
+              type="datetime-local"
+              value={endsAt}
+              onChange={(event) => setEndsAt(event.target.value)}
+            />
+          </div>
+          <Button size="sm" disabled={isPending} onClick={handleReschedule}>
+            Save new time
+          </Button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function CancelSessionButton({
+  sessionId,
+  showSeries,
+}: {
+  sessionId: string;
+  showSeries: boolean;
+}) {
+  const [isPending, startTransition] = useTransition();
+  const [scope, setScope] = useState<SessionScope>("one");
+
+  const handleCancel = () => {
+    startTransition(async () => {
+      const result = await cancelSessionsScoped(sessionId, scope);
+      if (result.error) {
+        toast.error(result.error);
+        return;
+      }
+      toast.success(
+        scope === "series" ? "Sessions cancelled" : "Session cancelled",
+      );
+    });
+  };
+
+  return (
+    <AlertDialog>
+      <AlertDialogTrigger
+        render={
+          <Button size="sm" variant="outline" disabled={isPending} />
+        }
+      >
+        Cancel
+      </AlertDialogTrigger>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>Cancel session?</AlertDialogTitle>
+          <AlertDialogDescription>
+            This marks the session as cancelled. Students will not be unenrolled.
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <ScopeRadioGroup
+          idPrefix={`cancel-${sessionId}`}
+          value={scope}
+          onChange={setScope}
+          showSeries={showSeries}
+        />
+        <AlertDialogFooter>
+          <AlertDialogCancel>Keep session</AlertDialogCancel>
+          <AlertDialogAction
+            variant="destructive"
+            disabled={isPending}
+            onClick={handleCancel}
+          >
+            Cancel session
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+  );
+}
+
+function SessionRow({
+  session,
+  roster,
+  attendance,
+  canManage,
+  showSeries,
+}: {
+  session: ClassSession;
+  roster: ClassRosterEntry[];
+  attendance: Record<string, boolean>;
+  canManage: boolean;
+  showSeries: boolean;
+}) {
+  const [isPending, startTransition] = useTransition();
+
+  const handleStatus = (status: ClassLifecycle) => {
+    startTransition(async () => {
+      const result = await updateSessionStatus(session.id, status);
+      if (result.error) {
+        toast.error(result.error);
+        return;
+      }
+      toast.success(`Session marked ${status}`);
+    });
+  };
+
+  return (
+    <div className="space-y-3 rounded-lg border p-3">
+      <div className="flex flex-wrap items-start justify-between gap-2">
+        <div>
+          <p className="text-sm font-medium">
+            {formatDateTime(session.starts_at)}
+          </p>
+          <p className="text-xs text-muted-foreground">
+            until {formatDateTime(session.ends_at)}
+          </p>
+          {session.session_note && (
+            <p className="mt-1 text-xs text-muted-foreground">
+              {session.session_note}
+            </p>
+          )}
+        </div>
+        <LifecycleBadge status={session.status} />
+      </div>
+
+      {canManage && session.status === "scheduled" && (
+        <>
+          <div className="flex flex-wrap gap-2">
+            <CancelSessionButton
+              sessionId={session.id}
+              showSeries={showSeries}
+            />
+            <Button
+              size="sm"
+              disabled={isPending}
+              onClick={() => handleStatus("completed")}
+            >
+              Complete
+            </Button>
+          </div>
+          <PostponeToPanel session={session} />
+          <ReschedulePanel session={session} showSeries={showSeries} />
+          <AttendancePanel
+            sessionId={session.id}
+            roster={roster}
+            initialAttendance={attendance}
+          />
+        </>
+      )}
+
+      {canManage && session.status === "postponed" && (
+        <ReschedulePanel session={session} showSeries={showSeries} />
+      )}
+    </div>
+  );
+}
+
+function CancelClassButton({
+  classId,
+  classTitle,
+}: {
+  classId: string;
+  classTitle: string;
+}) {
+  const [isPending, startTransition] = useTransition();
+  const [reason, setReason] = useState("");
+
+  const handleCancel = () => {
+    startTransition(async () => {
+      const result = await cancelClass(classId, reason);
+      if (result.error) {
+        toast.error(result.error);
+        return;
+      }
+      toast.success("Class cancelled");
+      setReason("");
+    });
+  };
+
+  return (
+    <AlertDialog>
+      <AlertDialogTrigger
+        render={
+          <Button size="sm" variant="destructive" disabled={isPending} />
+        }
+      >
+        Cancel class
+      </AlertDialogTrigger>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>Cancel {classTitle}?</AlertDialogTitle>
+          <AlertDialogDescription>
+            This cancels all open sessions and pending requests for this class.
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <div className="space-y-2">
+          <Label htmlFor={`cancel-reason-${classId}`}>Reason (optional)</Label>
+          <Textarea
+            id={`cancel-reason-${classId}`}
+            value={reason}
+            onChange={(event) => setReason(event.target.value)}
+            placeholder="Let participants know why..."
+            rows={3}
+          />
+        </div>
+        <AlertDialogFooter>
+          <AlertDialogCancel>Keep class</AlertDialogCancel>
+          <AlertDialogAction
+            variant="destructive"
+            disabled={isPending}
+            onClick={handleCancel}
+          >
+            Cancel class
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+  );
+}
+
+function ScheduleSessionsPanel({
+  classId,
+  proposedDayOfWeek,
+  proposedStartTime,
+  proposedEndTime,
+}: {
+  classId: string;
+  proposedDayOfWeek: number | null;
+  proposedStartTime: string | null;
+  proposedEndTime: string | null;
+}) {
+  const [isPending, startTransition] = useTransition();
+  const [weeks, setWeeks] = useState("0");
+
+  const defaults = useMemo(() => {
+    const base = new Date();
+    // Prefer the next occurrence of the proposed weekday when available
+    if (proposedDayOfWeek != null) {
+      const delta = (proposedDayOfWeek - base.getDay() + 7) % 7;
+      base.setDate(base.getDate() + (delta === 0 ? 7 : delta));
+    } else {
+      base.setDate(base.getDate() + 1);
+    }
+    base.setSeconds(0, 0);
+
+    const start = new Date(base);
+    const end = new Date(base);
+    if (proposedStartTime && proposedEndTime) {
+      const [sh, sm] = proposedStartTime.split(":").map(Number);
+      const [eh, em] = proposedEndTime.split(":").map(Number);
+      start.setHours(sh, sm || 0, 0, 0);
+      end.setHours(eh, em || 0, 0, 0);
+    } else {
+      start.setHours(17, 0, 0, 0);
+      end.setHours(18, 0, 0, 0);
+    }
+
+    return {
+      startsAt: toDatetimeLocalValue(start.toISOString()),
+      endsAt: toDatetimeLocalValue(end.toISOString()),
+    };
+  }, [proposedDayOfWeek, proposedStartTime, proposedEndTime]);
+
+  const [startsAt, setStartsAt] = useState(defaults.startsAt);
+  const [endsAt, setEndsAt] = useState(defaults.endsAt);
+
+  const handleSchedule = () => {
+    startTransition(async () => {
+      const result = await scheduleClassSessions(
+        classId,
+        fromDatetimeLocalValue(startsAt),
+        fromDatetimeLocalValue(endsAt),
+        parseInt(weeks, 10) || 0,
+      );
+      if (result.error) {
+        toast.error(result.error);
+        return;
+      }
+      toast.success("Timings added");
+    });
+  };
+
+  return (
+    <div className="space-y-3 rounded-lg border border-dashed p-4">
+      <div>
+        <p className="text-sm font-medium">Add meeting timings</p>
+        <p className="mt-1 text-xs text-muted-foreground">
+          Accepting a school request only agrees a weekly slot. Create the
+          actual calendar meetings here (or ask the school to).
+        </p>
+      </div>
+      <div className="grid gap-3 sm:grid-cols-2">
+        <div className="space-y-2">
+          <Label htmlFor={`schedule-start-${classId}`}>First meeting starts</Label>
+          <Input
+            id={`schedule-start-${classId}`}
+            type="datetime-local"
+            value={startsAt}
+            onChange={(event) => setStartsAt(event.target.value)}
+          />
+        </div>
+        <div className="space-y-2">
+          <Label htmlFor={`schedule-end-${classId}`}>Ends</Label>
+          <Input
+            id={`schedule-end-${classId}`}
+            type="datetime-local"
+            value={endsAt}
+            onChange={(event) => setEndsAt(event.target.value)}
+          />
+        </div>
+      </div>
+      <div className="space-y-2">
+        <Label htmlFor={`schedule-weeks-${classId}`}>
+          Extra weekly repeats (0 = just once, up to 8)
+        </Label>
+        <Input
+          id={`schedule-weeks-${classId}`}
+          type="number"
+          min={0}
+          max={8}
+          value={weeks}
+          onChange={(event) => setWeeks(event.target.value)}
+        />
+      </div>
+      <Button size="sm" disabled={isPending} onClick={handleSchedule}>
+        {isPending ? "Saving…" : "Create timings"}
+      </Button>
+    </div>
+  );
+}
+
+function NotesSection({
+  classId,
+  notes,
+  canManage,
+  currentUserId,
+}: {
+  classId: string;
+  notes: ClassNoteEntry[];
+  canManage: boolean;
+  currentUserId: string;
+}) {
+  const [isPending, startTransition] = useTransition();
+  const [body, setBody] = useState("");
+
+  const handleAdd = () => {
+    startTransition(async () => {
+      const result = await addNote(classId, body);
+      if (result.error) {
+        toast.error(result.error);
+        return;
+      }
+      toast.success("Note added");
+      setBody("");
+    });
+  };
+
+  const handleDelete = (noteId: string) => {
+    startTransition(async () => {
+      const result = await deleteNote(noteId, classId);
+      if (result.error) {
+        toast.error(result.error);
+        return;
+      }
+      toast.success("Note deleted");
+    });
+  };
+
+  return (
+    <div className="space-y-4">
+      {canManage && (
+        <div className="space-y-2">
+          <Label htmlFor="new-note">Add a note</Label>
+          <Textarea
+            id="new-note"
+            value={body}
+            onChange={(event) => setBody(event.target.value)}
+            placeholder="Shared notes for teachers and admins..."
+            rows={3}
+          />
+          <Button size="sm" disabled={isPending || !body.trim()} onClick={handleAdd}>
+            Add note
+          </Button>
+        </div>
+      )}
+
+      {notes.length === 0 ? (
+        <p className="text-sm text-muted-foreground">No notes yet.</p>
+      ) : (
+        <ul className="space-y-3">
+          {notes.map((note) => (
+            <li key={note.id} className="rounded-lg border p-3">
+              <div className="flex items-start justify-between gap-2">
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm whitespace-pre-wrap">{note.body}</p>
+                  <p className="mt-2 text-xs text-muted-foreground">
+                    {note.authorName} · {formatDateTime(note.createdAt)}
+                  </p>
+                </div>
+                {canManage && note.authorId === currentUserId && (
+                  <Button
+                    size="icon-sm"
+                    variant="ghost"
+                    disabled={isPending}
+                    onClick={() => handleDelete(note.id)}
+                  >
+                    <Trash2Icon className="size-3.5 text-destructive" />
+                  </Button>
+                )}
+              </div>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+export function ClassDetail({ data }: ClassDetailProps) {
+  const proposedDayLabel = useMemo(() => {
+    if (data.proposedDayOfWeek == null) return null;
+    return DAYS_OF_WEEK.find((day) => day.value === data.proposedDayOfWeek)?.label;
+  }, [data.proposedDayOfWeek]);
+
+  const upcomingSessions = useMemo(
+    () =>
+      data.sessions.filter(
+        (session) =>
+          session.status === "scheduled" || session.status === "postponed",
+      ),
+    [data.sessions],
+  );
+
+  const pastSessions = useMemo(
+    () =>
+      data.sessions.filter(
+        (session) =>
+          session.status === "completed" || session.status === "cancelled",
+      ),
+    [data.sessions],
+  );
+
+  const seriesSessionCount = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const session of data.sessions) {
+      if (!session.series_id) continue;
+      counts.set(session.series_id, (counts.get(session.series_id) ?? 0) + 1);
+    }
+    return counts;
+  }, [data.sessions]);
+
+  const hasSeries = (session: ClassSession) =>
+    !!session.series_id && (seriesSessionCount.get(session.series_id) ?? 0) > 1;
+
+  return (
+    <div className="space-y-6">
+      <div>
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <h1 className="font-heading text-2xl font-semibold">{data.title}</h1>
+            <p className="mt-1 text-muted-foreground">
+              {data.isHomeStudio
+                ? "Home studio"
+                : (data.org?.name ?? "Independent")}
+              {data.skill ? ` · ${data.skill}` : ""}
+              {data.teacher ? ` · ${data.teacher.name}` : ""}
+            </p>
+          </div>
+          <LifecycleBadge status={data.status} />
+        </div>
+        {data.canManage && data.status !== "cancelled" && (
+          <div className="mt-4">
+            <CancelClassButton classId={data.id} classTitle={data.title} />
+          </div>
+        )}
+        {!data.canManage && data.canEnroll && (
+          <div className="mt-4">
+            <EnrollWithSlots
+              classId={data.id}
+              sessions={data.sessions}
+              requireSlots={data.isHomeStudio}
+            />
+          </div>
+        )}
+        {!data.canManage && data.isEnrolled && data.isHomeStudio && (
+          <div className="mt-4 space-y-2">
+            <p className="text-sm text-muted-foreground">
+              You&apos;re enrolled. You can still add more slots below.
+            </p>
+            <EnrollWithSlots
+              classId={data.id}
+              sessions={data.sessions}
+              requireSlots
+            />
+          </div>
+        )}
+        {!data.canManage && data.isEnrolled && !data.isHomeStudio && (
+          <p className="mt-3 text-sm text-muted-foreground">
+            You&apos;re enrolled in this class.
+          </p>
+        )}
+      </div>
+
+      <Tabs defaultValue="overview">
+        <TabsList className="h-auto w-fit flex-wrap">
+          <TabsTrigger value="overview">Overview</TabsTrigger>
+          <TabsTrigger value="sessions">
+            Timings ({data.sessions.length})
+          </TabsTrigger>
+          {data.canManage && (
+            <>
+              <TabsTrigger value="roster">
+                Students ({data.roster.length})
+              </TabsTrigger>
+              <TabsTrigger value="attendance">Attendance</TabsTrigger>
+              <TabsTrigger value="notes">Notes ({data.notes.length})</TabsTrigger>
+            </>
+          )}
+        </TabsList>
+
+        <TabsContent value="overview" className="mt-4 space-y-4">
+          <Card>
+            <CardHeader className="pb-3">
+              <CardTitle className="text-base">Details</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-2 text-sm">
+              {data.description && (
+                <p className="leading-relaxed text-foreground/90">
+                  {data.description}
+                </p>
+              )}
+              <p>
+                <span className="text-muted-foreground">Who joins:</span>{" "}
+                {data.enrollmentMode === "self_enroll"
+                  ? "Anyone can enroll themselves"
+                  : "Students from the school / academy"}
+                {data.isHomeStudio ? " · Your personal class" : ""}
+              </p>
+              {data.rateLabel && (
+                <p>
+                  <span className="text-muted-foreground">Rate:</span>{" "}
+                  {data.rateLabel}
+                </p>
+              )}
+              {data.locationLabel && (
+                <p>
+                  <span className="text-muted-foreground">Location:</span>{" "}
+                  {data.locationLabel}
+                  {data.locationNote ? ` · ${data.locationNote}` : ""}
+                </p>
+              )}
+              {data.maxStudents != null && (
+                <p>
+                  <span className="text-muted-foreground">Capacity:</span>{" "}
+                  {data.roster.length}/{data.maxStudents} students
+                </p>
+              )}
+              {data.isRecurring && (
+                <p>
+                  <span className="text-muted-foreground">Type:</span> Recurring
+                </p>
+              )}
+              {data.startsAt && (
+                <p>
+                  <span className="text-muted-foreground">Starts:</span>{" "}
+                  {formatDateTime(data.startsAt)}
+                </p>
+              )}
+              {proposedDayLabel && data.proposedStartTime && data.proposedEndTime && (
+                <p>
+                  <span className="text-muted-foreground">
+                    Agreed weekly slot:
+                  </span>{" "}
+                  {proposedDayLabel}{" "}
+                  {formatTime(data.proposedStartTime.slice(0, 5))} –{" "}
+                  {formatTime(data.proposedEndTime.slice(0, 5))}
+                </p>
+              )}
+              {data.cancellationReason && (
+                <p>
+                  <span className="text-muted-foreground">Cancellation reason:</span>{" "}
+                  {data.cancellationReason}
+                </p>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="sessions" className="mt-4 space-y-4">
+          {data.sessions.length === 0 ? (
+            <div className="space-y-4">
+              {proposedDayLabel &&
+                data.proposedStartTime &&
+                data.proposedEndTime && (
+                  <div className="rounded-lg border bg-muted/30 px-4 py-3 text-sm">
+                    <p className="font-medium">Agreed weekly slot</p>
+                    <p className="mt-1 text-muted-foreground">
+                      {proposedDayLabel}{" "}
+                      {formatTime(data.proposedStartTime.slice(0, 5))} –{" "}
+                      {formatTime(data.proposedEndTime.slice(0, 5))}
+                    </p>
+                    <p className="mt-2 text-xs text-muted-foreground">
+                      This is the pattern you and the school agreed on — not
+                      calendar meetings yet.
+                    </p>
+                  </div>
+                )}
+              {data.canManage &&
+              ["accepted", "scheduled"].includes(data.status) ? (
+                <ScheduleSessionsPanel
+                  classId={data.id}
+                  proposedDayOfWeek={data.proposedDayOfWeek}
+                  proposedStartTime={data.proposedStartTime}
+                  proposedEndTime={data.proposedEndTime}
+                />
+              ) : (
+                <p className="text-sm text-muted-foreground">
+                  No meeting timings scheduled yet.
+                </p>
+              )}
+            </div>
+          ) : (
+            <>
+              {upcomingSessions.length > 0 && (
+                <div className="space-y-3">
+                  <h3 className="text-sm font-medium">Upcoming</h3>
+                  {upcomingSessions.map((session) => (
+                    <SessionRow
+                      key={session.id}
+                      session={session}
+                      roster={data.rosterBySession[session.id] ?? data.roster}
+                      attendance={data.attendanceBySession[session.id] ?? {}}
+                      canManage={data.canManage}
+                      showSeries={hasSeries(session)}
+                    />
+                  ))}
+                </div>
+              )}
+              {pastSessions.length > 0 && (
+                <div className="space-y-3">
+                  <h3 className="text-sm font-medium">Past</h3>
+                  {pastSessions.map((session) => (
+                    <SessionRow
+                      key={session.id}
+                      session={session}
+                      roster={data.rosterBySession[session.id] ?? data.roster}
+                      attendance={data.attendanceBySession[session.id] ?? {}}
+                      canManage={data.canManage}
+                      showSeries={hasSeries(session)}
+                    />
+                  ))}
+                </div>
+              )}
+            </>
+          )}
+        </TabsContent>
+
+        <TabsContent value="roster" className="mt-4">
+          {!data.canManage ? null : data.roster.length === 0 ? (
+            <p className="text-sm text-muted-foreground">No students enrolled.</p>
+          ) : (
+            <ul className="divide-y rounded-lg border">
+              {data.roster.map((student) => (
+                <li
+                  key={student.profileId}
+                  className="flex items-center justify-between px-4 py-3"
+                >
+                  <span className="font-medium">{student.fullName}</span>
+                  <span className="text-xs capitalize text-muted-foreground">
+                    {student.source}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </TabsContent>
+
+        <TabsContent value="attendance" className="mt-4 space-y-4">
+          {data.sessions.length === 0 ? (
+            <p className="text-sm text-muted-foreground">
+              No sessions to show attendance for.
+            </p>
+          ) : (
+            data.sessions.map((session) => {
+              const records = data.attendanceBySession[session.id] ?? {};
+              const sessionRoster =
+                data.rosterBySession[session.id] ?? data.roster;
+              const markedCount = Object.values(records).filter(Boolean).length;
+              return (
+                <Card key={session.id}>
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-sm font-medium">
+                      {formatDateTime(session.starts_at)}
+                    </CardTitle>
+                    <CardDescription>
+                      {markedCount} present · {sessionRoster.length} enrolled
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    {sessionRoster.length === 0 ? (
+                      <p className="text-sm text-muted-foreground">
+                        No students enrolled in this slot.
+                      </p>
+                    ) : (
+                      <ul className="space-y-1 text-sm">
+                        {sessionRoster.map((student) => (
+                          <li
+                            key={student.profileId}
+                            className="flex justify-between"
+                          >
+                            <span>{student.fullName}</span>
+                            <span className="text-muted-foreground">
+                              {student.profileId in records
+                                ? records[student.profileId]
+                                  ? "Present"
+                                  : "Absent"
+                                : "Not marked"}
+                            </span>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                    {data.canManage && session.status === "scheduled" && (
+                      <div className="mt-3">
+                        <AttendancePanel
+                          sessionId={session.id}
+                          roster={sessionRoster}
+                          initialAttendance={records}
+                        />
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
+              );
+            })
+          )}
+        </TabsContent>
+
+        <TabsContent value="notes" className="mt-4">
+          <NotesSection
+            classId={data.id}
+            notes={data.notes}
+            canManage={data.canManage}
+            currentUserId={data.currentUserId}
+          />
+        </TabsContent>
+      </Tabs>
+    </div>
+  );
+}
