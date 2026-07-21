@@ -189,7 +189,7 @@ export default async function TeacherClassesPage() {
           Personal classes
         </h1>
         <p className="mt-1 text-muted-foreground">
-          Classes you run yourself, and classes with schools.
+          Classes you create and run on your own.
         </p>
       </div>
       <HomeStudioClassForm canPost={canPost} />

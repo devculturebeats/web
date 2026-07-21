@@ -5,22 +5,18 @@ import { useEffect, useRef, useState, useTransition } from "react";
 
 import { markAllUnreadNotificationsRead } from "@/app/(app)/student/actions";
 import {
-  formatEnrollmentSource,
   JoinOrgButton,
-  LeaveClassButton,
   OnboardingForm,
+  RespondInstitutionInviteButtons,
 } from "@/components/student/student-action-buttons";
 import type {
-  EnrolledClass,
+  InstitutionInvite,
   JoinableOrg,
   LinkedInstitution,
   StudentNotification,
   UpcomingSession,
 } from "@/components/student/types";
-import { LifecycleBadge } from "@/components/lifecycle-badge";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
 import {
   Popover,
   PopoverContent,
@@ -30,15 +26,52 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 import { formatDateTime } from "@/lib/dates";
+import { cn } from "@/lib/utils";
 
 type StudentHomeProps = {
   needsProfile: boolean;
   joinableOrgs: JoinableOrg[];
   linkedInstitutions: LinkedInstitution[];
-  myClasses: EnrolledClass[];
+  institutionInvites: InstitutionInvite[];
   upcomingSessions: UpcomingSession[];
   notifications: StudentNotification[];
 };
+
+function orgTypeLabel(type: string): string {
+  if (type === "academy") return "academy";
+  return "school";
+}
+
+const APP_TIME_ZONE = "Asia/Kolkata";
+
+function dateKeyInAppTz(iso: string): string {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: APP_TIME_ZONE,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(new Date(iso));
+}
+
+function dayParts(iso: string): { weekday: string; day: string; month: string } {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: APP_TIME_ZONE,
+    weekday: "short",
+    day: "numeric",
+    month: "short",
+  }).formatToParts(new Date(iso));
+  const get = (type: Intl.DateTimeFormatPartTypes) =>
+    parts.find((part) => part.type === type)?.value ?? "";
+  return {
+    weekday: get("weekday"),
+    day: get("day"),
+    month: get("month"),
+  };
+}
+
+function sessionTime(iso: string): string {
+  return formatDateTime(iso).split(" · ")[1] ?? "";
+}
 
 function JoinInstitutionPopover({
   joinableOrgs,
@@ -93,7 +126,7 @@ export function StudentHome({
   needsProfile,
   joinableOrgs,
   linkedInstitutions,
-  myClasses,
+  institutionInvites,
   upcomingSessions,
   notifications,
 }: StudentHomeProps) {
@@ -104,7 +137,25 @@ export function StudentHome({
   const updatesRef = useRef<HTMLElement | null>(null);
   const markedRef = useRef(false);
 
-  const nextSession = upcomingSessions[0] ?? null;
+  const upcomingByDay = upcomingSessions.reduce<
+    {
+      key: string;
+      weekday: string;
+      day: string;
+      month: string;
+      items: UpcomingSession[];
+    }[]
+  >((groups, session) => {
+    const key = dateKeyInAppTz(session.startsAt);
+    const existing = groups.find((g) => g.key === key);
+    if (existing) {
+      existing.items.push(session);
+    } else {
+      const { weekday, day, month } = dayParts(session.startsAt);
+      groups.push({ key, weekday, day, month, items: [session] });
+    }
+    return groups;
+  }, []);
 
   const markUpdatesRead = () => {
     if (markedRef.current || unreadCount === 0) return;
@@ -167,30 +218,9 @@ export function StudentHome({
             Your next meeting times — when and where you need to show up.
           </p>
         </div>
-        {nextSession ? (
-          <Card className="border-primary/25">
-            <CardContent className="space-y-1.5">
-              <p className="font-heading text-xl font-semibold">
-                <Link
-                  href={`/classes/${nextSession.classId}`}
-                  className="hover:underline"
-                >
-                  {nextSession.classTitle}
-                </Link>
-              </p>
-              <p className="text-sm text-muted-foreground">
-                {formatDateTime(nextSession.startsAt)}
-              </p>
-              {nextSession.orgName && (
-                <p className="text-xs text-muted-foreground">
-                  {nextSession.orgName}
-                </p>
-              )}
-            </CardContent>
-          </Card>
-        ) : (
+        {upcomingByDay.length === 0 ? (
           <p className="text-sm text-muted-foreground">
-            Nothing scheduled yet.{" "}
+            Nothing scheduled in the next 7 days.{" "}
             <Link
               href="/student/browse"
               className="underline underline-offset-2"
@@ -199,114 +229,85 @@ export function StudentHome({
             </Link>{" "}
             or join your school below.
           </p>
-        )}
-
-        {upcomingSessions.length > 1 && (
-          <div className="grid gap-2">
-            {upcomingSessions.slice(1).map((session) => (
-              <div key={session.id} className="rounded-lg border px-3 py-3">
-                <div className="space-y-1">
-                  <p className="text-sm font-medium">
-                    <Link
-                      href={`/classes/${session.classId}`}
-                      className="hover:underline"
-                    >
-                      {session.classTitle}
-                    </Link>
-                  </p>
-                  <p className="text-xs text-muted-foreground">
-                    {formatDateTime(session.startsAt)}
-                  </p>
-                  {session.orgName && (
-                    <p className="text-xs text-muted-foreground">
-                      {session.orgName}
-                    </p>
-                  )}
+        ) : (
+          <div className="overflow-hidden rounded-xl border bg-card">
+            {upcomingByDay.map((group, index) => (
+              <div
+                key={group.key}
+                className={cn(
+                  "grid grid-cols-[4.5rem_1fr] sm:grid-cols-[5.5rem_1fr]",
+                  index > 0 && "border-t",
+                )}
+              >
+                <div className="flex flex-col items-center justify-start border-r bg-muted/30 px-2 py-4 text-center">
+                  <span className="text-[0.65rem] font-semibold uppercase tracking-wider text-muted-foreground">
+                    {group.weekday}
+                  </span>
+                  <span className="font-heading text-2xl font-semibold tabular-nums leading-none tracking-tight">
+                    {group.day}
+                  </span>
+                  <span className="mt-1 text-[0.65rem] uppercase tracking-wide text-muted-foreground">
+                    {group.month}
+                  </span>
                 </div>
+                <ul className="divide-y">
+                  {group.items.map((session) => (
+                    <li key={session.id} className="px-4 py-3">
+                      <p className="font-medium leading-snug">
+                        <Link
+                          href={`/classes/${session.classId}`}
+                          className="hover:underline"
+                        >
+                          {session.classTitle}
+                        </Link>
+                      </p>
+                      <p className="mt-0.5 text-sm tabular-nums text-muted-foreground">
+                        {sessionTime(session.startsAt)}
+                      </p>
+                      {(session.location || session.orgName) && (
+                        <p className="mt-0.5 text-sm text-muted-foreground">
+                          {session.location || session.orgName}
+                        </p>
+                      )}
+                    </li>
+                  ))}
+                </ul>
               </div>
             ))}
           </div>
         )}
       </section>
 
-      <section className="space-y-3">
-        <div>
-          <h2 className="font-heading text-lg font-semibold">My classes</h2>
-          <p className="text-sm text-muted-foreground">
-            Courses you&apos;re enrolled in. Open one for full details — Next up
-            shows only meetings that have a date on the calendar.
-          </p>
-        </div>
-        {myClasses.length === 0 ? (
-          <p className="text-sm text-muted-foreground">
-            No classes yet.{" "}
-            <Link
-              href="/student/browse"
-              className="underline underline-offset-2"
-            >
-              Browse classes
-            </Link>
-            .
-          </p>
-        ) : (
-          <div className="grid gap-3">
-            {myClasses.map((cls) => {
-              const place =
-                [cls.locationLabel, cls.locationNote]
-                  .filter(Boolean)
-                  .join(" · ") || null;
-
-              return (
-                <Card key={cls.id}>
-                  <CardContent className="flex flex-wrap items-start justify-between gap-3">
-                    <div className="min-w-0 flex-1 space-y-1.5">
-                      <p className="font-medium">
-                        <Link
-                          href={`/classes/${cls.id}`}
-                          className="hover:underline"
-                        >
-                          {cls.title}
-                        </Link>
-                      </p>
-                      <p className="text-sm text-muted-foreground">
-                        {cls.isHomeStudio
-                          ? cls.teacherName
-                            ? `Home studio · ${cls.teacherName}`
-                            : "Home studio"
-                          : (cls.orgName ?? "Independent")}
-                        {cls.skill ? ` · ${cls.skill}` : ""}
-                      </p>
-                      {place && (
-                        <p className="text-sm text-muted-foreground">
-                          Place: {place}
-                        </p>
-                      )}
-                      {cls.nextMeetingAt ? (
-                        <p className="text-sm text-muted-foreground">
-                          Next meeting: {formatDateTime(cls.nextMeetingAt)}
-                        </p>
-                      ) : cls.nextMeetingNote ? (
-                        <p className="text-sm text-muted-foreground">
-                          {cls.nextMeetingNote}
-                        </p>
-                      ) : null}
-                    </div>
-                    <div className="flex flex-wrap items-center gap-2">
-                      <Badge variant="secondary">
-                        {cls.isHomeStudio
-                          ? "Home studio"
-                          : formatEnrollmentSource(cls.source)}
-                      </Badge>
-                      <LifecycleBadge status={cls.status} />
-                      {cls.canLeave && <LeaveClassButton classId={cls.id} />}
-                    </div>
-                  </CardContent>
-                </Card>
-              );
-            })}
-          </div>
-        )}
-      </section>
+      {notifications.length > 0 && (
+        <section
+          ref={updatesRef}
+          id="updates"
+          className="scroll-mt-20 space-y-2"
+        >
+          <h2 className="font-heading text-lg font-semibold">Updates</h2>
+          <ul className="space-y-2">
+            {notifications.slice(0, 5).map((notification) => (
+              <li
+                key={notification.recipientId}
+                className="flex gap-3 text-sm"
+              >
+                <span className="w-28 shrink-0 tabular-nums text-muted-foreground">
+                  {formatDateTime(notification.createdAt).split(" · ")[0]}
+                </span>
+                <span className="min-w-0 text-foreground/90">
+                  <span className="font-medium">{notification.title}</span>
+                  {notification.body ? ` — ${notification.body}` : ""}
+                  {!notification.readAt && unreadCount > 0 ? (
+                    <span className="ml-1.5 text-xs font-medium text-primary">
+                      New
+                    </span>
+                  ) : null}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
 
       <section className="space-y-3">
         <div className="flex flex-wrap items-center justify-between gap-2">
@@ -320,66 +321,61 @@ export function StudentHome({
           </div>
           <JoinInstitutionPopover joinableOrgs={joinableOrgs} />
         </div>
+
+        {institutionInvites.length > 0 && (
+          <div className="space-y-2">
+            <h3 className="text-sm font-medium">Invites</h3>
+            <ul className="divide-y overflow-hidden rounded-xl border bg-card">
+              {institutionInvites.map((invite) => (
+                <li
+                  key={invite.id}
+                  className="flex flex-col gap-3 px-4 py-3 sm:flex-row sm:items-center sm:justify-between"
+                >
+                  <div className="min-w-0">
+                    <p className="font-medium leading-snug">{invite.orgName}</p>
+                    <p className="mt-0.5 text-sm text-muted-foreground">
+                      Are you part of this {orgTypeLabel(invite.orgType)}
+                      {invite.orgCity ? ` in ${invite.orgCity}` : ""}?
+                      {invite.batchName ? ` · ${invite.batchName}` : ""}
+                    </p>
+                  </div>
+                  <RespondInstitutionInviteButtons requestId={invite.id} />
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+
         {linkedInstitutions.length === 0 ? (
           <p className="text-sm text-muted-foreground">
-            None linked yet. Use Join school or academy to get started.
+            None linked yet. Accept an invite or use Join school or academy.
           </p>
         ) : (
-          <div className="grid gap-3">
-            {linkedInstitutions.map((link) => (
-              <Card key={link.id}>
-                <CardContent className="space-y-1.5">
-                  <p className="font-medium">{link.orgName}</p>
-                  <p className="text-sm text-muted-foreground capitalize">
-                    {link.orgType}
-                    {link.batchName ? ` · ${link.batchName}` : ""}
+          <div className="overflow-hidden rounded-xl border bg-card">
+            <ul className="divide-y">
+              {linkedInstitutions.map((link) => (
+                <li
+                  key={link.id}
+                  className="grid min-h-12 grid-cols-[4rem_1fr] items-center gap-4 px-4 py-2.5"
+                >
+                  <span className="text-[0.65rem] font-semibold uppercase tracking-wider text-muted-foreground">
+                    {link.orgType === "academy" ? "Academy" : "School"}
+                  </span>
+                  <p className="min-w-0 truncate text-sm leading-snug">
+                    <span className="font-medium">{link.orgName}</span>
+                    {link.batchName ? (
+                      <span className="text-muted-foreground">
+                        {" "}
+                        · {link.batchName}
+                      </span>
+                    ) : null}
                   </p>
-                </CardContent>
-              </Card>
-            ))}
+                </li>
+              ))}
+            </ul>
           </div>
         )}
       </section>
-
-      {notifications.length > 0 && (
-        <section ref={updatesRef} id="updates" className="scroll-mt-20 space-y-3">
-          <h2 className="font-heading text-lg font-semibold">Updates</h2>
-          <div className="grid gap-3">
-            {notifications.slice(0, 5).map((notification) => (
-              <Card
-                key={notification.recipientId}
-                className={
-                  notification.readAt || unreadCount === 0
-                    ? undefined
-                    : "border-primary/30"
-                }
-              >
-                <CardContent className="space-y-2">
-                  <div className="flex flex-wrap items-start justify-between gap-3">
-                    <div className="space-y-1">
-                      <p className="font-medium">{notification.title}</p>
-                      {notification.orgName && (
-                        <p className="text-xs text-muted-foreground">
-                          {notification.orgName}
-                        </p>
-                      )}
-                    </div>
-                    {!notification.readAt && unreadCount > 0 && (
-                      <Badge variant="secondary">New</Badge>
-                    )}
-                  </div>
-                  <p className="text-sm text-muted-foreground">
-                    {notification.body}
-                  </p>
-                  <p className="text-xs text-muted-foreground">
-                    {formatDateTime(notification.createdAt)}
-                  </p>
-                </CardContent>
-              </Card>
-            ))}
-          </div>
-        </section>
-      )}
     </div>
   );
 }

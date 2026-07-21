@@ -2,8 +2,13 @@
 
 import { revalidatePath } from "next/cache";
 
+import {
+  parseRecurrenceFromForm,
+  recurrenceDbFields,
+} from "@/lib/recurrence";
 import { assertOrgApproved } from "@/lib/orgs";
 import { getCurrentOrganization } from "@/lib/orgs";
+import { revalidateSchoolPaths } from "@/lib/school/revalidate";
 import { createClient } from "@/lib/supabase/server";
 import {
   parseWeekDays,
@@ -17,40 +22,6 @@ export type SchoolActionState = {
   success?: boolean;
   matches?: TeacherMatch[];
 };
-
-function getNextOccurrence(
-  dayOfWeek: number,
-  startTime: string,
-  endTime: string,
-): { starts_at: string; ends_at: string } {
-  const now = new Date();
-  const currentDay = now.getDay();
-  let daysUntil = (dayOfWeek - currentDay + 7) % 7;
-
-  const [sh, sm] = startTime.split(":").map(Number);
-  const todayStart = new Date(now);
-  todayStart.setHours(sh, sm, 0, 0);
-
-  if (daysUntil === 0 && now >= todayStart) {
-    daysUntil = 7;
-  }
-
-  const sessionDate = new Date(now);
-  sessionDate.setDate(sessionDate.getDate() + daysUntil);
-
-  const [eh, em] = endTime.split(":").map(Number);
-
-  const startsAt = new Date(sessionDate);
-  startsAt.setHours(sh, sm, 0, 0);
-
-  const endsAt = new Date(sessionDate);
-  endsAt.setHours(eh, em, 0, 0);
-
-  return {
-    starts_at: startsAt.toISOString(),
-    ends_at: endsAt.toISOString(),
-  };
-}
 
 function parseRequestedSlots(formData: FormData): {
   slots: WeekDaySlot[];
@@ -149,32 +120,39 @@ export async function requestTeacher(
   } = await supabase.auth.getUser();
   if (!user) return { error: "Not authenticated." };
 
-  const title = (formData.get("title") as string)?.trim();
+  const title = (formData.get("title") as string)?.trim() || null;
   const skill = (formData.get("skill") as string)?.trim();
   const teacherId = formData.get("teacher_id") as string;
   const batchId = (formData.get("batch_id") as string)?.trim() || null;
   const message = (formData.get("message") as string)?.trim() || null;
   const { slots, error: slotsError } = parseRequestedSlots(formData);
+  const { value: recurrence, error: recurrenceError } =
+    parseRecurrenceFromForm(formData);
 
-  if (!title || !skill || !teacherId) {
-    return { error: "Title, skill, and teacher are required." };
+  if (!skill || !teacherId) {
+    return { error: "Skill and teacher are required." };
   }
   if (slotsError) return { error: slotsError };
+  if (recurrenceError) return { error: recurrenceError };
 
   const proposed = proposedSlotFields(slots);
+  const recurrenceFields = recurrenceDbFields(recurrence);
+  const classTitle = title || skill;
 
   const { data: classRow, error: classError } = await supabase
     .from("classes")
     .insert({
       organization_id: org.id,
       batch_id: batchId,
-      title,
+      title: classTitle,
       skill,
       status: "requested",
       enrollment_mode: "assigned",
-      is_recurring: slots.length > 1,
+      is_recurring:
+        recurrence.mode !== "once" || slots.length > 1,
       created_by: user.id,
       ...proposed,
+      ...recurrenceFields,
     })
     .select("id")
     .single();
@@ -187,13 +165,15 @@ export async function requestTeacher(
     class_id: classRow.id,
     teacher_id: teacherId,
     status: "requested",
+    request_kind: "assign",
     message,
     ...proposed,
+    ...recurrenceFields,
   });
 
   if (requestError) return { error: requestError.message };
 
-  revalidatePath("/school");
+  revalidateSchoolPaths(["/school", "/school/classes", "/school/notify"]);
   return { success: true };
 }
 
@@ -212,18 +192,23 @@ export async function assignTeacherDirectly(
   } = await supabase.auth.getUser();
   if (!user) return { error: "Not authenticated." };
 
-  const title = (formData.get("title") as string)?.trim();
+  const title = (formData.get("title") as string)?.trim() || null;
   const skill = (formData.get("skill") as string)?.trim();
   const teacherId = formData.get("teacher_id") as string;
   const batchId = (formData.get("batch_id") as string)?.trim() || null;
   const { slots, error: slotsError } = parseRequestedSlots(formData);
+  const { value: recurrence, error: recurrenceError } =
+    parseRecurrenceFromForm(formData);
 
-  if (!title || !skill || !teacherId) {
-    return { error: "All class details are required." };
+  if (!skill || !teacherId) {
+    return { error: "Skill and teacher are required." };
   }
   if (slotsError) return { error: slotsError };
+  if (recurrenceError) return { error: recurrenceError };
 
   const proposed = proposedSlotFields(slots);
+  const recurrenceFields = recurrenceDbFields(recurrence);
+  const classTitle = title || skill;
 
   const { data: classRow, error: classError } = await supabase
     .from("classes")
@@ -231,13 +216,14 @@ export async function assignTeacherDirectly(
       organization_id: org.id,
       batch_id: batchId,
       teacher_id: teacherId,
-      title,
+      title: classTitle,
       skill,
       status: "accepted",
       enrollment_mode: "assigned",
-      is_recurring: slots.length > 1,
+      is_recurring: recurrence.mode !== "once" || slots.length > 1,
       created_by: user.id,
       ...proposed,
+      ...recurrenceFields,
     })
     .select("id")
     .single();
@@ -246,49 +232,13 @@ export async function assignTeacherDirectly(
     return { error: classError?.message ?? "Failed to create class." };
   }
 
-  // First slot via RPC (status + linked-student enroll); remaining slots inserted.
-  const firstOccurrence = getNextOccurrence(
-    slots[0].day,
-    slots[0].start,
-    slots[0].end,
+  const { error: sessionError } = await supabase.rpc(
+    "create_sessions_from_proposed_slots",
+    { p_class_id: classRow.id },
   );
-  const { error: sessionError } = await supabase.rpc("create_class_sessions", {
-    p_class_id: classRow.id,
-    p_starts_at: firstOccurrence.starts_at,
-    p_ends_at: firstOccurrence.ends_at,
-    p_recurring_weeks: 0,
-  });
   if (sessionError) return { error: sessionError.message };
 
-  if (slots.length > 1) {
-    const extraRows = slots.slice(1).map((slot) => {
-      const { starts_at, ends_at } = getNextOccurrence(
-        slot.day,
-        slot.start,
-        slot.end,
-      );
-      return {
-        class_id: classRow.id,
-        starts_at,
-        ends_at,
-        status: "scheduled" as const,
-        series_id: crypto.randomUUID(),
-      };
-    });
-
-    const { error: extraError } = await supabase
-      .from("class_sessions")
-      .insert(extraRows);
-    if (extraError) return { error: extraError.message };
-
-    const { error: classUpdateError } = await supabase
-      .from("classes")
-      .update({ is_recurring: true })
-      .eq("id", classRow.id);
-    if (classUpdateError) return { error: classUpdateError.message };
-  }
-
-  revalidatePath("/school");
+  revalidateSchoolPaths(["/school", "/school/classes", "/school/notify"]);
   return { success: true };
 }
 
@@ -320,7 +270,98 @@ export async function scheduleClassSessions(
 
   if (error) return { error: error.message };
 
-  revalidatePath("/school");
+  revalidateSchoolPaths(["/school/classes", "/school/notify"]);
+  return { success: true };
+}
+
+export async function scheduleFromProposedSlots(
+  classId: string,
+): Promise<SchoolActionState> {
+  const org = await getCurrentOrganization();
+  if (!org) return { error: "Organization not found." };
+
+  const approvalError = assertOrgApproved(org);
+  if (approvalError) return { error: approvalError };
+
+  if (!classId) return { error: "Class is required." };
+
+  const supabase = await createClient();
+  const { error } = await supabase.rpc("create_sessions_from_proposed_slots", {
+    p_class_id: classId,
+  });
+
+  if (error) return { error: error.message };
+
+  revalidateSchoolPaths(["/school/classes", "/school/notify"]);
+  return { success: true };
+}
+
+/** Ask the assigned teacher to approve a new weekly schedule / recurrence. */
+export async function requestScheduleUpdate(
+  formData: FormData,
+): Promise<SchoolActionState> {
+  const org = await getCurrentOrganization();
+  if (!org) return { error: "Organization not found." };
+
+  const approvalError = assertOrgApproved(org);
+  if (approvalError) return { error: approvalError };
+
+  const classId = formData.get("class_id") as string;
+  const message = (formData.get("message") as string)?.trim() || null;
+  const { slots, error: slotsError } = parseRequestedSlots(formData);
+  const { value: recurrence, error: recurrenceError } =
+    parseRecurrenceFromForm(formData);
+
+  if (!classId) return { error: "Class is required." };
+  if (slotsError) return { error: slotsError };
+  if (recurrenceError) return { error: recurrenceError };
+
+  const supabase = await createClient();
+  const { data: cls, error: classError } = await supabase
+    .from("classes")
+    .select("id, organization_id, teacher_id, status")
+    .eq("id", classId)
+    .eq("organization_id", org.id)
+    .maybeSingle();
+
+  if (classError) return { error: classError.message };
+  if (!cls) return { error: "Class not found." };
+  if (!cls.teacher_id) {
+    return { error: "This class has no teacher to request a schedule from." };
+  }
+  if (!["accepted", "scheduled"].includes(cls.status)) {
+    return { error: "Schedule updates are only for accepted classes." };
+  }
+
+  const { data: openRequest } = await supabase
+    .from("class_requests")
+    .select("id")
+    .eq("class_id", classId)
+    .eq("status", "requested")
+    .eq("request_kind", "schedule")
+    .maybeSingle();
+
+  if (openRequest) {
+    return { error: "A schedule update is already waiting on the teacher." };
+  }
+
+  const proposed = proposedSlotFields(slots);
+  const recurrenceFields = recurrenceDbFields(recurrence);
+
+  const { error: requestError } = await supabase.from("class_requests").insert({
+    class_id: classId,
+    teacher_id: cls.teacher_id,
+    status: "requested",
+    request_kind: "schedule",
+    message,
+    ...proposed,
+    ...recurrenceFields,
+  });
+
+  if (requestError) return { error: requestError.message };
+
+  revalidateSchoolPaths(["/school/classes"]);
+  revalidatePath("/teacher/requests");
   return { success: true };
 }
 
@@ -342,7 +383,7 @@ export async function updateSessionStatus(
 
   if (error) return { error: error.message };
 
-  revalidatePath("/school");
+  revalidateSchoolPaths(["/school/classes"]);
   return { success: true };
 }
 
@@ -364,7 +405,7 @@ export async function cancelClass(
 
   if (error) return { error: error.message };
 
-  revalidatePath("/school");
+  revalidateSchoolPaths(["/school/classes", "/school/notify"]);
   return { success: true };
 }
 
@@ -402,7 +443,7 @@ export async function rescheduleSession(
   if (error) return { error: error.message };
 
   if (session?.class_id) revalidatePath(`/classes/${session.class_id}`);
-  revalidatePath("/school");
+  revalidateSchoolPaths(["/school/classes"]);
   return { success: true };
 }
 
@@ -434,6 +475,6 @@ export async function sendNotification(
 
   if (error) return { error: error.message };
 
-  revalidatePath("/school");
+  revalidateSchoolPaths(["/school/notify"]);
   return { success: true };
 }

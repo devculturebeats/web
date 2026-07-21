@@ -36,9 +36,13 @@ export default async function TeacherRequestsPage() {
       teacher_id,
       status,
       message,
+      request_kind,
+      recurrence_mode,
+      recurrence_until,
       proposed_day_of_week,
       proposed_start_time,
       proposed_end_time,
+      proposed_slots,
       created_at,
       responded_at,
       classes (
@@ -49,13 +53,10 @@ export default async function TeacherRequestsPage() {
     `,
     )
     .eq("teacher_id", teacherId)
+    .eq("status", "requested")
     .order("created_at", { ascending: false });
 
-  const requests = (data ?? []) as ClassRequestWithDetails[];
-  const pending = requests.filter((r) => r.status === "requested");
-  const history = requests.filter(
-    (r) => r.status === "accepted" || r.status === "rejected",
-  );
+  const pending = (data ?? []) as ClassRequestWithDetails[];
 
   return (
     <div className="space-y-6">
@@ -65,7 +66,7 @@ export default async function TeacherRequestsPage() {
           Review invitations from schools and academies.
         </p>
       </div>
-      <ClassRequestList pending={pending} history={history} />
+      <ClassRequestList pending={pending} />
     </div>
   );
 }

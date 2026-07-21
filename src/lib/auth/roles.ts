@@ -52,12 +52,18 @@ export function getNavLinks(role: AppRole): { href: string; label: string }[] {
         { href: "/admin/audit", label: "Audit" },
       ];
     case "school_admin":
-      return [{ href: "/school", label: "School" }];
+      return [
+        { href: "/school", label: "Request teacher" },
+        { href: "/school/classes", label: "Scheduled classes" },
+        { href: "/school/students", label: "Students" },
+        { href: "/school/notify", label: "Notify" },
+      ];
     case "academy_admin":
       return [{ href: "/academy", label: "Academy" }];
     case "student":
       return [
         { href: "/dashboard", label: "Home" },
+        { href: "/student/courses", label: "My Courses" },
         { href: "/student/browse", label: "Browse classes" },
       ];
     default:

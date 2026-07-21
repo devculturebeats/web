@@ -6,15 +6,10 @@ import { toast } from "sonner";
 import { respondToClassRequest } from "@/app/(app)/teacher/requests/actions";
 import { LifecycleBadge } from "@/components/lifecycle-badge";
 import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { DAYS_OF_WEEK } from "@/lib/constants";
 import { formatDateTime, formatTime } from "@/lib/dates";
+import { formatRecurrenceLabel } from "@/lib/recurrence";
 import type { ClassRequest } from "@/types/database";
 
 export type ClassRequestWithDetails = ClassRequest & {
@@ -27,7 +22,6 @@ export type ClassRequestWithDetails = ClassRequest & {
 
 type ClassRequestListProps = {
   pending: ClassRequestWithDetails[];
-  history: ClassRequestWithDetails[];
 };
 
 function formatOneSlot(
@@ -84,6 +78,11 @@ function RequestCard({
   const [isPending, startTransition] = useTransition();
   const cls = request.classes;
   const proposedSlot = formatProposedSlots(request);
+  const isScheduleUpdate = request.request_kind === "schedule";
+  const recurrenceLabel = formatRecurrenceLabel({
+    mode: request.recurrence_mode,
+    until: request.recurrence_until,
+  });
 
   const handleRespond = (accept: boolean) => {
     startTransition(async () => {
@@ -92,38 +91,45 @@ function RequestCard({
         toast.error(result.error);
         return;
       }
-      toast.success(accept ? "Request accepted" : "Request rejected");
+      toast.success(
+        accept
+          ? isScheduleUpdate
+            ? "Schedule update accepted"
+            : "Request accepted"
+          : "Request rejected",
+      );
     });
   };
 
   return (
-    <Card>
-      <CardHeader className="pb-3">
+    <Card size="sm" className="gap-3">
+      <CardContent className="space-y-3">
         <div className="flex flex-wrap items-start justify-between gap-2">
-          <div>
-            <CardTitle className="text-base">{cls?.title ?? "Class"}</CardTitle>
-            <CardDescription>
+          <div className="min-w-0 space-y-1">
+            <p className="font-heading text-base font-medium leading-snug">
               {cls?.organizations?.name ?? "Independent"}
               {cls?.skill ? ` · ${cls.skill}` : ""}
-            </CardDescription>
+            </p>
+            {isScheduleUpdate && (
+              <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                Schedule update
+              </p>
+            )}
+            {proposedSlot && (
+              <p className="text-sm text-muted-foreground">{proposedSlot}</p>
+            )}
+            <p className="text-sm text-muted-foreground">{recurrenceLabel}</p>
+            {request.message && (
+              <p className="text-sm text-muted-foreground">{request.message}</p>
+            )}
+            <p className="text-xs text-muted-foreground">
+              {request.responded_at
+                ? `Responded ${formatDateTime(request.responded_at)}`
+                : `Received ${formatDateTime(request.created_at)}`}
+            </p>
           </div>
           <LifecycleBadge status={request.status} />
         </div>
-      </CardHeader>
-      <CardContent className="space-y-3">
-        {proposedSlot && (
-          <p className="text-sm font-medium text-foreground">
-            Proposed schedule: {proposedSlot}
-          </p>
-        )}
-        {request.message && (
-          <p className="text-sm text-muted-foreground">{request.message}</p>
-        )}
-        <p className="text-xs text-muted-foreground">
-          {request.responded_at
-            ? `Responded ${formatDateTime(request.responded_at)}`
-            : `Received ${formatDateTime(request.created_at)}`}
-        </p>
         {showActions && (
           <div className="flex flex-wrap gap-2">
             <Button
@@ -148,38 +154,18 @@ function RequestCard({
   );
 }
 
-export function ClassRequestList({ pending, history }: ClassRequestListProps) {
+export function ClassRequestList({ pending }: ClassRequestListProps) {
   return (
-    <div className="space-y-8">
-      <section className="space-y-3">
-        <h2 className="font-heading text-lg font-semibold">Pending requests</h2>
-        {pending.length === 0 ? (
-          <p className="text-sm text-muted-foreground">No pending requests.</p>
-        ) : (
-          <div className="grid gap-3">
-            {pending.map((request) => (
-              <RequestCard key={request.id} request={request} showActions />
-            ))}
-          </div>
-        )}
-      </section>
-
-      <section className="space-y-3">
-        <h2 className="font-heading text-lg font-semibold">History</h2>
-        {history.length === 0 ? (
-          <p className="text-sm text-muted-foreground">No past responses yet.</p>
-        ) : (
-          <div className="grid gap-3">
-            {history.map((request) => (
-              <RequestCard
-                key={request.id}
-                request={request}
-                showActions={false}
-              />
-            ))}
-          </div>
-        )}
-      </section>
-    </div>
+    <section className="space-y-3">
+      {pending.length === 0 ? (
+        <p className="text-sm text-muted-foreground">No pending requests.</p>
+      ) : (
+        <div className="grid gap-3">
+          {pending.map((request) => (
+            <RequestCard key={request.id} request={request} showActions />
+          ))}
+        </div>
+      )}
+    </section>
   );
 }

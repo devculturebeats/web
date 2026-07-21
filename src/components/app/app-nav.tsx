@@ -5,11 +5,9 @@ import { usePathname } from "next/navigation";
 import { MenuIcon } from "lucide-react";
 import { useState } from "react";
 
-import { signOut } from "@/lib/auth/actions";
 import {
   getDashboardPath,
   getNavLinks,
-  getRoleLabel,
 } from "@/lib/auth/roles";
 import type { CurrentProfile } from "@/lib/profiles";
 import { Button } from "@/components/ui/button";
@@ -19,7 +17,6 @@ import {
   SheetHeader,
   SheetTitle,
 } from "@/components/ui/sheet";
-import { Separator } from "@/components/ui/separator";
 import { cn } from "@/lib/utils";
 
 export function AppNav({ profile }: { profile: CurrentProfile }) {
@@ -28,12 +25,23 @@ export function AppNav({ profile }: { profile: CurrentProfile }) {
   const navLinks = getNavLinks(profile.role);
   const homeHref = getDashboardPath(profile.role);
 
+  const accountActive =
+    pathname === "/account/password" || pathname.startsWith("/account/");
+
   const NavLinks = ({ onNavigate }: { onNavigate?: () => void }) => (
     <>
       {navLinks.map((link) => {
-        const active =
-          pathname === link.href ||
-          (link.href !== "/" && pathname.startsWith(`${link.href}/`));
+        const exact = pathname === link.href;
+        const nested =
+          link.href !== "/" && pathname.startsWith(`${link.href}/`);
+        const moreSpecificMatch = navLinks.some(
+          (other) =>
+            other.href !== link.href &&
+            other.href.startsWith(`${link.href}/`) &&
+            (pathname === other.href ||
+              pathname.startsWith(`${other.href}/`)),
+        );
+        const active = exact || (nested && !moreSpecificMatch);
 
         return (
           <Link
@@ -66,18 +74,17 @@ export function AppNav({ profile }: { profile: CurrentProfile }) {
 
         <nav className="hidden items-center gap-1 md:flex">
           <NavLinks />
-          <span
-            aria-hidden
-            className="mx-2 inline-block h-4 w-px shrink-0 bg-border"
-          />
-          <span className="px-2 text-xs text-muted-foreground">
-            {getRoleLabel(profile.role)}
-          </span>
-          <form action={signOut}>
-            <Button type="submit" variant="ghost" size="sm">
-              Sign out
-            </Button>
-          </form>
+          <Link
+            href="/account/password"
+            className={cn(
+              "rounded-lg px-3 py-2 text-sm font-medium transition-colors",
+              accountActive
+                ? "bg-muted text-foreground"
+                : "text-foreground/80 hover:bg-muted hover:text-foreground",
+            )}
+          >
+            My account
+          </Link>
         </nav>
 
         <Button
@@ -100,19 +107,19 @@ export function AppNav({ profile }: { profile: CurrentProfile }) {
             </SheetHeader>
             <div className="mt-6 flex flex-col gap-1">
               <NavLinks onNavigate={() => setOpen(false)} />
+              <Link
+                href="/account/password"
+                onClick={() => setOpen(false)}
+                className={cn(
+                  "rounded-lg px-3 py-2 text-sm font-medium transition-colors",
+                  accountActive
+                    ? "bg-muted text-foreground"
+                    : "text-foreground/80 hover:bg-muted hover:text-foreground",
+                )}
+              >
+                My account
+              </Link>
             </div>
-            <Separator className="my-4" />
-            <p className="px-3 text-xs text-muted-foreground">
-              Signed in as {profile.full_name || profile.email}
-            </p>
-            <p className="px-3 text-xs text-muted-foreground">
-              {getRoleLabel(profile.role)}
-            </p>
-            <form action={signOut} className="mt-4 px-3">
-              <Button type="submit" variant="outline" className="w-full">
-                Sign out
-              </Button>
-            </form>
           </SheetContent>
         </Sheet>
       </div>

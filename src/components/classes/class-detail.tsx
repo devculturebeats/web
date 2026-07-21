@@ -650,8 +650,8 @@ function ScheduleSessionsPanel({
       <div>
         <p className="text-sm font-medium">Add meeting timings</p>
         <p className="mt-1 text-xs text-muted-foreground">
-          Accepting a school request only agrees a weekly slot. Create the
-          actual calendar meetings here (or ask the school to).
+          No calendar meetings yet. Create them from the requested weekly slot,
+          or pick a first meeting time below.
         </p>
       </div>
       <div className="grid gap-3 sm:grid-cols-2">
@@ -827,7 +827,9 @@ export function ClassDetail({ data }: ClassDetailProps) {
               {data.isHomeStudio
                 ? "Home studio"
                 : (data.org?.name ?? "Independent")}
-              {data.skill ? ` · ${data.skill}` : ""}
+              {data.skill && data.skill !== data.title
+                ? ` · ${data.skill}`
+                : ""}
               {data.teacher ? ` · ${data.teacher.name}` : ""}
             </p>
           </div>

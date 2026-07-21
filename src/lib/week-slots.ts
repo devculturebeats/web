@@ -65,3 +65,31 @@ export function weekSlotsToJson(slots: WeekDaySlot[]): {
     end: slot.end,
   }));
 }
+
+/** Resolve weekly slots from a class row's proposed_* fields. */
+export function slotsFromProposed(input: {
+  proposed_slots?: unknown;
+  proposed_day_of_week?: number | null;
+  proposed_start_time?: string | null;
+  proposed_end_time?: string | null;
+}): WeekDaySlot[] | null {
+  if (Array.isArray(input.proposed_slots) && input.proposed_slots.length > 0) {
+    return parseWeekDays(JSON.stringify(input.proposed_slots));
+  }
+
+  if (
+    input.proposed_day_of_week == null ||
+    !input.proposed_start_time ||
+    !input.proposed_end_time
+  ) {
+    return null;
+  }
+
+  return [
+    {
+      day: input.proposed_day_of_week,
+      start: normalizeTime(input.proposed_start_time.slice(0, 5)),
+      end: normalizeTime(input.proposed_end_time.slice(0, 5)),
+    },
+  ];
+}

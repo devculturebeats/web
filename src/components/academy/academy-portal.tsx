@@ -19,7 +19,7 @@ import { BatchesPanel } from "@/components/org/batches-panel";
 import { CancelClassDialog } from "@/components/org/cancel-class-dialog";
 import { NotifyPanel } from "@/components/org/notify-panel";
 import { PendingApprovalBanner } from "@/components/org/pending-approval-banner";
-import { StudentsPanel, type LinkedStudent } from "@/components/org/students-panel";
+import { StudentsPanel, type LinkedStudent, type PendingStudentInvite } from "@/components/org/students-panel";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -74,6 +74,7 @@ type AcademyPortalProps = {
   org: Organization;
   batches: Batch[];
   students: LinkedStudent[];
+  pendingInvites?: PendingStudentInvite[];
   classes: AcademyClass[];
   teachers: ApprovedTeacher[];
   auditLogs: AuditLogWithActor[];
@@ -83,6 +84,7 @@ export function AcademyPortal({
   org,
   batches,
   students,
+  pendingInvites = [],
   classes,
   teachers,
   auditLogs,
@@ -431,10 +433,14 @@ export function AcademyPortal({
                           </Link>
                         </p>
                         <p className="text-sm text-muted-foreground">
-                          {cls.skill}
-                          {cls.teacher?.profiles?.full_name
-                            ? ` · ${cls.teacher.profiles.full_name}`
-                            : ""}
+                          {[
+                            cls.skill && cls.skill !== cls.title
+                              ? cls.skill
+                              : null,
+                            cls.teacher?.profiles?.full_name ?? null,
+                          ]
+                            .filter(Boolean)
+                            .join(" · ")}
                         </p>
                         {cls.starts_at && (
                           <p className="mt-1 text-xs text-muted-foreground">
@@ -499,6 +505,7 @@ export function AcademyPortal({
         <TabsContent value="students" className="mt-4">
           <StudentsPanel
             students={students}
+            pendingInvites={pendingInvites}
             batches={batches}
             disabled={!isApproved}
           />

@@ -27,5 +27,7 @@ export async function respondToClassRequest(
   if (error) return { error: error.message };
 
   revalidatePath("/teacher/requests");
+  revalidatePath("/school/classes");
+  revalidatePath("/dashboard");
   return { success: true };
 }

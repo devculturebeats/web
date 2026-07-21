@@ -73,6 +73,29 @@ export async function joinOrganization(
   return { success: true };
 }
 
+export async function respondToInstitutionInvite(
+  requestId: string,
+  accept: boolean,
+): Promise<StudentActionState> {
+  const profile = await getCurrentProfile();
+  if (!profile || profile.role !== "student") {
+    return { error: "Student profile not found." };
+  }
+
+  const supabase = await createClient();
+  const { error } = await supabase.rpc("respond_to_student_link_request", {
+    p_request_id: requestId,
+    p_accept: accept,
+  });
+
+  if (error) return { error: error.message };
+
+  revalidateStudentPaths();
+  revalidatePath("/school/students");
+  revalidatePath("/academy");
+  return { success: true };
+}
+
 export async function enrollInClass(
   classId: string,
   sessionIds?: string[],

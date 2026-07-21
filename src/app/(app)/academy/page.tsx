@@ -5,10 +5,11 @@ import {
   type AcademyClass,
   type ApprovedTeacher,
 } from "@/components/academy/academy-portal";
-import type { LinkedStudent } from "@/components/org/students-panel";
+import type { LinkedStudent, PendingStudentInvite } from "@/components/org/students-panel";
 import type { AuditLogWithActor } from "@/lib/audit";
 import { getCurrentProfile } from "@/lib/profiles";
 import { getCurrentOrganization } from "@/lib/orgs";
+import { loadSchoolPendingStudentInvites } from "@/lib/school/data";
 import { createClient } from "@/lib/supabase/server";
 import type { ClassSession } from "@/types/database";
 
@@ -41,7 +42,7 @@ export default async function AcademyPage() {
     studentIds.length > 0
       ? await supabase
           .from("profiles")
-          .select("id, full_name, email")
+          .select("id, full_name, email, username")
           .in("id", studentIds)
       : { data: [] };
 
@@ -54,9 +55,18 @@ export default async function AcademyPage() {
     student_profile_id: link.student_profile_id,
     batch_id: link.batch_id,
     created_at: link.created_at,
-    student: profileMap[link.student_profile_id] ?? null,
+    student: profileMap[link.student_profile_id]
+      ? {
+          full_name: profileMap[link.student_profile_id].full_name,
+          email: profileMap[link.student_profile_id].email,
+          username: profileMap[link.student_profile_id].username,
+        }
+      : null,
     batch: link.batch_id ? { name: batchMap[link.batch_id]?.name ?? "" } : null,
   }));
+
+  const pendingInvites: PendingStudentInvite[] =
+    await loadSchoolPendingStudentInvites(org.id);
 
   const { data: classRows } = await supabase
     .from("classes")
@@ -176,6 +186,7 @@ export default async function AcademyPage() {
       org={org}
       batches={batches ?? []}
       students={students}
+      pendingInvites={pendingInvites}
       classes={classes}
       teachers={teachers}
       auditLogs={(auditLogs ?? []) as AuditLogWithActor[]}

@@ -12,9 +12,10 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { formatLocationType } from "@/lib/class-pricing";
 import { DAYS_OF_WEEK } from "@/lib/constants";
 import { getDashboardPath } from "@/lib/auth/roles";
-import { formatDate, formatDateTime, formatTime } from "@/lib/dates";
+import { formatDateTime, formatTime } from "@/lib/dates";
 import { getCurrentProfile } from "@/lib/profiles";
 import { loadStudentDashboardData } from "@/lib/student/data";
 import { createClient } from "@/lib/supabase/server";
@@ -72,12 +73,24 @@ function dateKeyInAppTz(iso: string): string {
   }).format(new Date(iso));
 }
 
-function dayHeading(iso: string): string {
-  const weekday = new Intl.DateTimeFormat("en-IN", {
+function dayParts(iso: string): { weekday: string; day: string; month: string } {
+  const parts = new Intl.DateTimeFormat("en-US", {
     timeZone: "Asia/Kolkata",
-    weekday: "long",
-  }).format(new Date(iso));
-  return `${weekday} · ${formatDate(iso)}`;
+    weekday: "short",
+    day: "numeric",
+    month: "short",
+  }).formatToParts(new Date(iso));
+  const get = (type: Intl.DateTimeFormatPartTypes) =>
+    parts.find((part) => part.type === type)?.value ?? "";
+  return {
+    weekday: get("weekday"),
+    day: get("day"),
+    month: get("month"),
+  };
+}
+
+function sessionTime(iso: string): string {
+  return formatDateTime(iso).split(" · ")[1] ?? "";
 }
 
 async function TeacherHome({
@@ -103,6 +116,7 @@ async function TeacherHome({
     class_id: string;
     title: string;
     status: string;
+    place: string | null;
   }[] = [];
 
   if (teacherId) {
@@ -121,7 +135,9 @@ async function TeacherHome({
           .order("start_time"),
         supabase
           .from("classes")
-          .select("id, title, class_sessions(id, starts_at, status)")
+          .select(
+            "id, title, location_type, location_note, is_home_studio, organizations(name, city, area), class_sessions(id, starts_at, ends_at, status)",
+          )
           .eq("teacher_id", teacherId)
           .neq("status", "cancelled"),
       ]);
@@ -135,13 +151,30 @@ async function TeacherHome({
         const sessions = (cls.class_sessions ?? []) as {
           id: string;
           starts_at: string;
+          ends_at: string;
           status: string;
         }[];
+        const org = Array.isArray(cls.organizations)
+          ? cls.organizations[0]
+          : cls.organizations;
+        const orgPlace = org
+          ? [org.name, org.area || org.city].filter(Boolean).join(" · ")
+          : null;
+        const locationFallback =
+          [formatLocationType(cls.location_type), cls.location_note]
+            .filter(Boolean)
+            .join(" · ") || null;
+        const place =
+          orgPlace ||
+          (cls.is_home_studio ? "Home studio" : null) ||
+          locationFallback;
+
         return sessions
           .filter(
             (s) =>
               (s.status === "scheduled" || s.status === "postponed") &&
-              new Date(s.starts_at).getTime() >= now,
+              // Keep today's class visible until it ends, not only before it starts.
+              new Date(s.ends_at || s.starts_at).getTime() >= now,
           )
           .map((s) => ({
             id: s.id,
@@ -149,6 +182,7 @@ async function TeacherHome({
             class_id: cls.id,
             title: cls.title,
             status: s.status,
+            place,
           }));
       })
       .sort(
@@ -159,16 +193,25 @@ async function TeacherHome({
   }
 
   const upcomingByDay = upcoming.reduce<
-    { key: string; heading: string; items: typeof upcoming }[]
+    {
+      key: string;
+      weekday: string;
+      day: string;
+      month: string;
+      items: typeof upcoming;
+    }[]
   >((groups, session) => {
     const key = dateKeyInAppTz(session.starts_at);
     const existing = groups.find((g) => g.key === key);
     if (existing) {
       existing.items.push(session);
     } else {
+      const { weekday, day, month } = dayParts(session.starts_at);
       groups.push({
         key,
-        heading: dayHeading(session.starts_at),
+        weekday,
+        day,
+        month,
         items: [session],
       });
     }
@@ -280,20 +323,34 @@ async function TeacherHome({
             started.
           </p>
         ) : (
-          <div className="space-y-5">
-            {upcomingByDay.map((group) => (
-              <div key={group.key} className="space-y-2">
-                <h3 className="pb-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                  {group.heading}
-                </h3>
-                <ul className="space-y-2">
+          <div className="overflow-hidden rounded-xl border bg-card">
+            {upcomingByDay.map((group, index) => (
+              <div
+                key={group.key}
+                className={cn(
+                  "grid grid-cols-[4.5rem_1fr] sm:grid-cols-[5.5rem_1fr]",
+                  index > 0 && "border-t",
+                )}
+              >
+                <div className="flex flex-col items-center justify-start border-r bg-muted/30 px-2 py-4 text-center">
+                  <span className="text-[0.65rem] font-semibold uppercase tracking-wider text-muted-foreground">
+                    {group.weekday}
+                  </span>
+                  <span className="font-heading text-2xl font-semibold tabular-nums leading-none tracking-tight">
+                    {group.day}
+                  </span>
+                  <span className="mt-1 text-[0.65rem] uppercase tracking-wide text-muted-foreground">
+                    {group.month}
+                  </span>
+                </div>
+                <ul className="divide-y">
                   {group.items.map((session) => (
                     <li
                       key={session.id}
-                      className="flex flex-wrap items-center justify-between gap-3 rounded-xl border bg-card px-4 py-3"
+                      className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 px-4 py-3"
                     >
-                      <div>
-                        <p className="font-medium">
+                      <div className="min-w-0">
+                        <p className="font-medium leading-snug">
                           <Link
                             href={`/classes/${session.class_id}`}
                             className="hover:underline"
@@ -301,11 +358,18 @@ async function TeacherHome({
                             {session.title}
                           </Link>
                         </p>
-                        <p className="text-sm text-muted-foreground">
-                          {formatDateTime(session.starts_at)}
+                        <p className="mt-0.5 text-sm tabular-nums text-muted-foreground">
+                          {sessionTime(session.starts_at)}
                         </p>
+                        {session.place && (
+                          <p className="mt-0.5 text-sm text-muted-foreground">
+                            {session.place}
+                          </p>
+                        )}
                       </div>
-                      <LifecycleBadge status={session.status} />
+                      {session.status !== "scheduled" && (
+                        <LifecycleBadge status={session.status} />
+                      )}
                     </li>
                   ))}
                 </ul>
@@ -331,7 +395,8 @@ export default async function DashboardPage() {
   }
 
   if (profile.role === "student") {
-    const data = await loadStudentDashboardData(profile);
+    const { myClasses: _myClasses, ...homeData } =
+      await loadStudentDashboardData(profile);
 
     return (
       <div className="space-y-6">
@@ -341,10 +406,10 @@ export default async function DashboardPage() {
             {profile.full_name ? `, ${profile.full_name.split(" ")[0]}` : ""}
           </h1>
           <p className="mt-1 text-muted-foreground">
-            See what&apos;s next, then manage your classes.
+            See what&apos;s coming up this week.
           </p>
         </div>
-        <StudentHome {...data} />
+        <StudentHome {...homeData} />
       </div>
     );
   }

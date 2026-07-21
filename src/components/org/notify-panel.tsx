@@ -10,8 +10,8 @@ import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Textarea } from "@/components/ui/textarea";
+import { cn } from "@/lib/utils";
 
 const notifySchema = z
   .object({
@@ -90,30 +90,21 @@ export function NotifyPanel({ classes, disabled, onSend }: NotifyPanelProps) {
         toast.error(result.error);
         return;
       }
-      toast.success("Notification sent.");
+      toast.success("Sent to students.");
       reset();
       setSelectedClassIds([]);
     });
   };
 
   return (
-    <form
-      onSubmit={handleSubmit(onSubmit)}
-      className="space-y-4 rounded-lg border p-4"
-    >
-      <h3 className="font-medium">Send notification</h3>
-      <p className="text-sm text-muted-foreground">
-        Notify enrolled students about schedule changes, events, or announcements.
-      </p>
-
-      <fieldset disabled={disabled || isPending} className="space-y-4">
+    <form onSubmit={handleSubmit(onSubmit)} className="max-w-xl space-y-8">
+      <fieldset disabled={disabled || isPending} className="space-y-6">
         <div className="space-y-2">
-          <Label htmlFor="notify_title">
-            Title <span className="text-destructive">*</span>
-          </Label>
+          <Label htmlFor="notify_title">Subject</Label>
           <Input
             id="notify_title"
-            placeholder="e.g. Class cancelled tomorrow"
+            placeholder="Class cancelled tomorrow"
+            className="h-10"
             {...register("title")}
           />
           {errors.title && (
@@ -122,13 +113,12 @@ export function NotifyPanel({ classes, disabled, onSend }: NotifyPanelProps) {
         </div>
 
         <div className="space-y-2">
-          <Label htmlFor="notify_body">
-            Message <span className="text-destructive">*</span>
-          </Label>
+          <Label htmlFor="notify_body">Message</Label>
           <Textarea
             id="notify_body"
-            placeholder="Write your message to students..."
-            rows={4}
+            placeholder="A short note for your students…"
+            rows={5}
+            className="min-h-28 resize-y"
             {...register("body")}
           />
           {errors.body && (
@@ -137,61 +127,74 @@ export function NotifyPanel({ classes, disabled, onSend }: NotifyPanelProps) {
         </div>
 
         <div className="space-y-3">
-          <Label>Audience</Label>
-          <RadioGroup
-            value={audience}
-            onValueChange={(value) =>
-              setValue("audience", value as "all" | "selected")
-            }
-            className="gap-3"
-          >
-            <label className="flex items-center gap-2 text-sm">
-              <RadioGroupItem value="all" />
-              All enrolled students
-            </label>
-            <label className="flex items-center gap-2 text-sm">
-              <RadioGroupItem value="selected" />
-              Selected classes
-            </label>
-          </RadioGroup>
+          <p className="text-sm font-medium">Who should get this?</p>
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              disabled={disabled || isPending}
+              onClick={() => setValue("audience", "all")}
+              className={cn(
+                "rounded-lg px-3 py-1.5 text-sm transition-colors",
+                audience === "all"
+                  ? "bg-foreground text-background"
+                  : "bg-muted/60 text-foreground hover:bg-muted",
+              )}
+            >
+              Everyone enrolled
+            </button>
+            <button
+              type="button"
+              disabled={disabled || isPending}
+              onClick={() => setValue("audience", "selected")}
+              className={cn(
+                "rounded-lg px-3 py-1.5 text-sm transition-colors",
+                audience === "selected"
+                  ? "bg-foreground text-background"
+                  : "bg-muted/60 text-foreground hover:bg-muted",
+              )}
+            >
+              Specific classes
+            </button>
+          </div>
+
+          {audience === "selected" && (
+            <div className="space-y-2 pt-1">
+              {classes.length === 0 ? (
+                <p className="text-sm text-muted-foreground">
+                  No classes to choose from yet.
+                </p>
+              ) : (
+                <ul className="space-y-2">
+                  {classes.map((cls) => (
+                    <li key={cls.id}>
+                      <label
+                        htmlFor={`notify-class-${cls.id}`}
+                        className="flex cursor-pointer items-center gap-2.5 text-sm"
+                      >
+                        <Checkbox
+                          id={`notify-class-${cls.id}`}
+                          checked={selectedClassIds.includes(cls.id)}
+                          onCheckedChange={(checked) =>
+                            toggleClass(cls.id, checked === true)
+                          }
+                        />
+                        <span>{cls.title}</span>
+                      </label>
+                    </li>
+                  ))}
+                </ul>
+              )}
+              {errors.class_ids && (
+                <p className="text-sm text-destructive">
+                  {errors.class_ids.message}
+                </p>
+              )}
+            </div>
+          )}
         </div>
 
-        {audience === "selected" && (
-          <div className="space-y-2 rounded-md border border-dashed p-3">
-            <Label>Select classes</Label>
-            {classes.length === 0 ? (
-              <p className="text-sm text-muted-foreground">No classes available.</p>
-            ) : (
-              <ul className="space-y-2">
-                {classes.map((cls) => (
-                  <li key={cls.id} className="flex items-center gap-2">
-                    <Checkbox
-                      id={`notify-class-${cls.id}`}
-                      checked={selectedClassIds.includes(cls.id)}
-                      onCheckedChange={(checked) =>
-                        toggleClass(cls.id, checked === true)
-                      }
-                    />
-                    <Label
-                      htmlFor={`notify-class-${cls.id}`}
-                      className="cursor-pointer font-normal"
-                    >
-                      {cls.title}
-                    </Label>
-                  </li>
-                ))}
-              </ul>
-            )}
-            {errors.class_ids && (
-              <p className="text-sm text-destructive">
-                {errors.class_ids.message}
-              </p>
-            )}
-          </div>
-        )}
-
         <Button type="submit" disabled={disabled || isPending}>
-          {isPending ? "Sending..." : "Send notification"}
+          {isPending ? "Sending…" : "Send"}
         </Button>
       </fieldset>
     </form>

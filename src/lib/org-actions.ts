@@ -32,6 +32,8 @@ export async function createBatch(formData: FormData): Promise<OrgActionState> {
   if (error) return { error: error.message };
 
   revalidatePath("/school");
+  revalidatePath("/school/batches");
+  revalidatePath("/school/students");
   revalidatePath("/academy");
   return { success: true };
 }
@@ -49,6 +51,11 @@ export async function linkStudent(formData: FormData): Promise<OrgActionState> {
   if (!email) return { error: "Student email is required." };
 
   const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { error: "Not authenticated." };
+
   const { data: student } = await supabase
     .from("profiles")
     .select("id, role")
@@ -56,34 +63,51 @@ export async function linkStudent(formData: FormData): Promise<OrgActionState> {
     .eq("role", "student")
     .maybeSingle();
 
-  if (!student) {
-    return { error: "No student account found with that email." };
+  if (student) {
+    const { data: existingLink } = await supabase
+      .from("student_links")
+      .select("id")
+      .eq("student_profile_id", student.id)
+      .eq("organization_id", org.id)
+      .maybeSingle();
+
+    if (existingLink) {
+      return { error: "This student is already linked to your organization." };
+    }
   }
 
-  const { error } = await supabase.from("student_links").insert({
-    student_profile_id: student.id,
+  const { data: pending } = await supabase
+    .from("student_link_requests")
+    .select("id")
+    .eq("organization_id", org.id)
+    .eq("status", "requested")
+    .ilike("student_email", email)
+    .maybeSingle();
+
+  if (pending) {
+    return { error: "An invite is already waiting for this email." };
+  }
+
+  const { error } = await supabase.from("student_link_requests").insert({
+    student_profile_id: student?.id ?? null,
+    student_email: email,
     organization_id: org.id,
     batch_id: batchId || null,
+    status: "requested",
+    created_by: user.id,
   });
 
   if (error) {
     if (error.code === "23505") {
-      return { error: "This student is already linked to your organization." };
+      return { error: "An invite is already waiting for this email." };
     }
     return { error: error.message };
   }
 
-  const { error: enrollError } = await supabase.rpc(
-    "enroll_student_into_org_assigned_classes",
-    {
-      p_student_id: student.id,
-      p_organization_id: org.id,
-    },
-  );
-
-  if (enrollError) return { error: enrollError.message };
-
   revalidatePath("/school");
+  revalidatePath("/school/students");
+  revalidatePath("/school/batches");
   revalidatePath("/academy");
+  revalidatePath("/dashboard");
   return { success: true };
 }

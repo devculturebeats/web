@@ -21,6 +21,8 @@ function revalidateClass(classId: string) {
   revalidatePath(`/classes/${classId}`);
   revalidatePath("/teacher/classes");
   revalidatePath("/school");
+  revalidatePath("/school/classes");
+  revalidatePath("/school/notify");
   revalidatePath("/academy");
   revalidatePath("/dashboard");
   revalidatePath("/student/browse");

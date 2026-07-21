@@ -42,6 +42,8 @@ export interface Database {
           role: AppRole;
           approval_status: ApprovalStatus;
           onboarding_completed: boolean;
+          username: string | null;
+          is_provisioned: boolean;
           created_at: string;
           updated_at: string;
         };
@@ -55,6 +57,8 @@ export interface Database {
           role?: AppRole;
           approval_status?: ApprovalStatus;
           onboarding_completed?: boolean;
+          username?: string | null;
+          is_provisioned?: boolean;
           created_at?: string;
           updated_at?: string;
         };
@@ -68,6 +72,8 @@ export interface Database {
           role?: AppRole;
           approval_status?: ApprovalStatus;
           onboarding_completed?: boolean;
+          username?: string | null;
+          is_provisioned?: boolean;
           created_at?: string;
           updated_at?: string;
         };
@@ -228,6 +234,14 @@ export interface Database {
           logo_url: string | null;
           approval_status: ApprovalStatus;
           created_by: string | null;
+          incharge_name: string | null;
+          activities: string[];
+          place_id: string | null;
+          latitude: number | null;
+          longitude: number | null;
+          contact_email: string | null;
+          contact_phone: string | null;
+          contact_whatsapp: string | null;
           created_at: string;
           updated_at: string;
         };
@@ -241,6 +255,14 @@ export interface Database {
           logo_url?: string | null;
           approval_status?: ApprovalStatus;
           created_by?: string | null;
+          incharge_name?: string | null;
+          activities?: string[];
+          place_id?: string | null;
+          latitude?: number | null;
+          longitude?: number | null;
+          contact_email?: string | null;
+          contact_phone?: string | null;
+          contact_whatsapp?: string | null;
           created_at?: string;
           updated_at?: string;
         };
@@ -254,6 +276,14 @@ export interface Database {
           logo_url?: string | null;
           approval_status?: ApprovalStatus;
           created_by?: string | null;
+          incharge_name?: string | null;
+          activities?: string[];
+          place_id?: string | null;
+          latitude?: number | null;
+          longitude?: number | null;
+          contact_email?: string | null;
+          contact_phone?: string | null;
+          contact_whatsapp?: string | null;
           created_at?: string;
           updated_at?: string;
         };
@@ -320,6 +350,8 @@ export interface Database {
           starts_at: string | null;
           ends_at: string | null;
           recurrence_rule: string | null;
+          recurrence_mode: "once" | "until_date" | "ongoing";
+          recurrence_until: string | null;
           enrollment_mode: string;
           proposed_day_of_week: number | null;
           proposed_start_time: string | null;
@@ -350,6 +382,8 @@ export interface Database {
           starts_at?: string | null;
           ends_at?: string | null;
           recurrence_rule?: string | null;
+          recurrence_mode?: "once" | "until_date" | "ongoing";
+          recurrence_until?: string | null;
           enrollment_mode?: string;
           proposed_day_of_week?: number | null;
           proposed_start_time?: string | null;
@@ -380,6 +414,8 @@ export interface Database {
           starts_at?: string | null;
           ends_at?: string | null;
           recurrence_rule?: string | null;
+          recurrence_mode?: "once" | "until_date" | "ongoing";
+          recurrence_until?: string | null;
           enrollment_mode?: string;
           proposed_day_of_week?: number | null;
           proposed_start_time?: string | null;
@@ -421,6 +457,9 @@ export interface Database {
           teacher_id: string;
           status: ClassLifecycle;
           message: string | null;
+          request_kind: "assign" | "schedule";
+          recurrence_mode: "once" | "until_date" | "ongoing";
+          recurrence_until: string | null;
           proposed_day_of_week: number | null;
           proposed_start_time: string | null;
           proposed_end_time: string | null;
@@ -434,6 +473,9 @@ export interface Database {
           teacher_id: string;
           status?: ClassLifecycle;
           message?: string | null;
+          request_kind?: "assign" | "schedule";
+          recurrence_mode?: "once" | "until_date" | "ongoing";
+          recurrence_until?: string | null;
           proposed_day_of_week?: number | null;
           proposed_start_time?: string | null;
           proposed_end_time?: string | null;
@@ -447,6 +489,9 @@ export interface Database {
           teacher_id?: string;
           status?: ClassLifecycle;
           message?: string | null;
+          request_kind?: "assign" | "schedule";
+          recurrence_mode?: "once" | "until_date" | "ongoing";
+          recurrence_until?: string | null;
           proposed_day_of_week?: number | null;
           proposed_start_time?: string | null;
           proposed_end_time?: string | null;
@@ -545,6 +590,64 @@ export interface Database {
           },
           {
             foreignKeyName: "student_links_batch_id_fkey";
+            columns: ["batch_id"];
+            isOneToOne: false;
+            referencedRelation: "batches";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+      student_link_requests: {
+        Row: {
+          id: string;
+          organization_id: string;
+          student_profile_id: string | null;
+          student_email: string;
+          batch_id: string | null;
+          status: "requested" | "accepted" | "rejected";
+          created_by: string | null;
+          created_at: string;
+          responded_at: string | null;
+        };
+        Insert: {
+          id?: string;
+          organization_id: string;
+          student_profile_id?: string | null;
+          student_email: string;
+          batch_id?: string | null;
+          status?: "requested" | "accepted" | "rejected";
+          created_by?: string | null;
+          created_at?: string;
+          responded_at?: string | null;
+        };
+        Update: {
+          id?: string;
+          organization_id?: string;
+          student_profile_id?: string | null;
+          student_email?: string;
+          batch_id?: string | null;
+          status?: "requested" | "accepted" | "rejected";
+          created_by?: string | null;
+          created_at?: string;
+          responded_at?: string | null;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "student_link_requests_organization_id_fkey";
+            columns: ["organization_id"];
+            isOneToOne: false;
+            referencedRelation: "organizations";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "student_link_requests_student_profile_id_fkey";
+            columns: ["student_profile_id"];
+            isOneToOne: false;
+            referencedRelation: "profiles";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "student_link_requests_batch_id_fkey";
             columns: ["batch_id"];
             isOneToOne: false;
             referencedRelation: "batches";
@@ -913,6 +1016,10 @@ export interface Database {
         };
         Returns: Database["public"]["Tables"]["class_sessions"]["Row"][];
       };
+      create_sessions_from_proposed_slots: {
+        Args: { p_class_id: string };
+        Returns: undefined;
+      };
       enroll_in_open_class: {
         Args: { p_class_id: string; p_session_ids?: string[] | null };
         Returns: undefined;
@@ -934,6 +1041,49 @@ export interface Database {
           p_accept: boolean;
         };
         Returns: Database["public"]["Tables"]["class_requests"]["Row"];
+      };
+      respond_to_student_link_request: {
+        Args: {
+          p_request_id: string;
+          p_accept: boolean;
+        };
+        Returns: Database["public"]["Tables"]["student_link_requests"]["Row"];
+      };
+      claim_student_link_invites: {
+        Args: Record<string, never>;
+        Returns: number;
+      };
+      is_synthetic_student_email: {
+        Args: { p_email: string };
+        Returns: boolean;
+      };
+      resolve_login_email: {
+        Args: { p_identifier: string };
+        Returns: string | null;
+      };
+      provision_org_student: {
+        Args: {
+          p_organization_id: string;
+          p_full_name: string;
+          p_email?: string | null;
+          p_batch_name?: string | null;
+          p_batch_id?: string | null;
+        };
+        Returns: string;
+      };
+      import_org_students: {
+        Args: {
+          p_organization_id: string;
+          p_students: Json;
+        };
+        Returns: Json;
+      };
+      issue_student_login: {
+        Args: {
+          p_organization_id: string;
+          p_student_profile_id: string;
+        };
+        Returns: Json;
       };
       cancel_class: {
         Args: {

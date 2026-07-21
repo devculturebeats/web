@@ -9,6 +9,7 @@ import {
   joinOrganization,
   leaveClass,
   markNotificationRead,
+  respondToInstitutionInvite,
 } from "@/app/(app)/student/actions";
 import { Button } from "@/components/ui/button";
 import {
@@ -90,6 +91,41 @@ export function JoinOrgButton({ orgId }: { orgId: string }) {
     <Button size="sm" variant="outline" disabled={isPending} onClick={handleJoin}>
       Join
     </Button>
+  );
+}
+
+export function RespondInstitutionInviteButtons({
+  requestId,
+}: {
+  requestId: string;
+}) {
+  const [isPending, startTransition] = useTransition();
+
+  const respond = (accept: boolean) => {
+    startTransition(async () => {
+      const result = await respondToInstitutionInvite(requestId, accept);
+      if (result.error) {
+        toast.error(result.error);
+        return;
+      }
+      toast.success(accept ? "You’re linked now" : "Invite declined");
+    });
+  };
+
+  return (
+    <div className="flex shrink-0 gap-2">
+      <Button size="sm" disabled={isPending} onClick={() => respond(true)}>
+        Yes, accept
+      </Button>
+      <Button
+        size="sm"
+        variant="outline"
+        disabled={isPending}
+        onClick={() => respond(false)}
+      >
+        No
+      </Button>
+    </div>
   );
 }
 

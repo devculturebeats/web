@@ -17,7 +17,7 @@ import { createClient } from "@/lib/supabase/client";
 import type { AppRole } from "@/types/database";
 
 const loginSchema = z.object({
-  email: z.email("Enter a valid email"),
+  identifier: z.string().min(1, "Enter your email or username"),
   password: z.string().min(6, "Password must be at least 6 characters"),
 });
 
@@ -39,7 +39,26 @@ export function LoginForm() {
   const onSubmit = async (values: LoginFormValues) => {
     setLoading(true);
     const supabase = createClient();
-    const { error } = await supabase.auth.signInWithPassword(values);
+    const identifier = values.identifier.trim();
+
+    let email = identifier;
+    if (!identifier.includes("@")) {
+      const { data: resolved, error: resolveError } = await supabase.rpc(
+        "resolve_login_email",
+        { p_identifier: identifier },
+      );
+      if (resolveError || !resolved) {
+        toast.error("Invalid username or password.");
+        setLoading(false);
+        return;
+      }
+      email = resolved;
+    }
+
+    const { error } = await supabase.auth.signInWithPassword({
+      email,
+      password: values.password,
+    });
 
     if (error) {
       toast.error(error.message);
@@ -54,9 +73,7 @@ export function LoginForm() {
       .select("role")
       .single();
 
-    router.push(
-      getDashboardPath((profile?.role ?? "student") as AppRole),
-    );
+    router.push(getDashboardPath((profile?.role ?? "student") as AppRole));
     router.refresh();
   };
 
@@ -80,17 +97,19 @@ export function LoginForm() {
     <div className="space-y-6">
       <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
         <div className="space-y-2">
-          <Label htmlFor="email">Email</Label>
+          <Label htmlFor="identifier">Email or username</Label>
           <Input
-            id="email"
-            type="email"
-            autoComplete="email"
-            placeholder="you@example.com"
-            aria-invalid={!!errors.email}
-            {...register("email")}
+            id="identifier"
+            type="text"
+            autoComplete="username"
+            placeholder="you@example.com or school.username"
+            aria-invalid={!!errors.identifier}
+            {...register("identifier")}
           />
-          {errors.email && (
-            <p className="text-sm text-destructive">{errors.email.message}</p>
+          {errors.identifier && (
+            <p className="text-sm text-destructive">
+              {errors.identifier.message}
+            </p>
           )}
         </div>
 

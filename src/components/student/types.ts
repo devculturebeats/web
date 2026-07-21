@@ -52,6 +52,7 @@ export type UpcomingSession = {
   status: string;
   classTitle: string;
   orgName: string | null;
+  location: string | null;
 };
 
 export type AttendanceHistoryItem = {
@@ -69,4 +70,13 @@ export type StudentNotification = {
   orgName: string | null;
   createdAt: string;
   readAt: string | null;
+};
+
+export type InstitutionInvite = {
+  id: string;
+  orgName: string;
+  orgType: string;
+  orgCity: string | null;
+  batchName: string | null;
+  createdAt: string;
 };

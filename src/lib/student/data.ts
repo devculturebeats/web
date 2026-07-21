@@ -6,6 +6,7 @@ import { formatClassRate, formatLocationType } from "@/lib/class-pricing";
 import { createClient } from "@/lib/supabase/server";
 import type {
   EnrolledClass,
+  InstitutionInvite,
   JoinableOrg,
   LinkedInstitution,
   MarketplaceClass,
@@ -78,6 +79,7 @@ export type StudentDashboardData = {
   needsProfile: boolean;
   joinableOrgs: JoinableOrg[];
   linkedInstitutions: LinkedInstitution[];
+  institutionInvites: InstitutionInvite[];
   myClasses: EnrolledClass[];
   upcomingSessions: UpcomingSession[];
   notifications: StudentNotification[];
@@ -183,6 +185,9 @@ export async function loadStudentDashboardData(
   const supabase = await createClient();
   const needsProfile = await prepareStudentProfile(profile);
 
+  // Attach any invites sent to this email before the account existed.
+  await supabase.rpc("claim_student_link_invites");
+
   const { data: linksData } = await supabase
     .from("student_links")
     .select(
@@ -203,6 +208,7 @@ export async function loadStudentDashboardData(
     { data: approveOrgs },
     { data: enrollmentsData },
     { data: notificationsData },
+    { data: inviteRows },
   ] = await Promise.all([
     supabase
       .from("organizations")
@@ -245,6 +251,20 @@ export async function loadStudentDashboardData(
       `,
       )
       .eq("student_profile_id", profile.id),
+    supabase
+      .from("student_link_requests")
+      .select(
+        `
+        id,
+        created_at,
+        student_email,
+        batches (name),
+        organizations (name, type, city)
+      `,
+      )
+      .eq("student_profile_id", profile.id)
+      .eq("status", "requested")
+      .order("created_at", { ascending: false }),
   ]);
 
   const enrollments = (enrollmentsData ?? []) as EnrollmentRow[];
@@ -266,9 +286,27 @@ export async function loadStudentDashboardData(
     batchName: link.batches?.name ?? null,
   }));
 
+  const institutionInvites: InstitutionInvite[] = (inviteRows ?? []).map(
+    (row) => {
+      const org = Array.isArray(row.organizations)
+        ? row.organizations[0]
+        : row.organizations;
+      const batch = Array.isArray(row.batches) ? row.batches[0] : row.batches;
+      return {
+        id: row.id,
+        orgName: org?.name ?? "Institution",
+        orgType: org?.type ?? "school",
+        orgCity: org?.city ?? null,
+        batchName: batch?.name ?? null,
+        createdAt: row.created_at,
+      };
+    },
+  );
+
   const classIds = [...enrolledClassIds];
   const now = new Date().toISOString();
   let upcomingSessions: UpcomingSession[] = [];
+  const nextByClass = new Map<string, string>();
 
   if (classIds.length > 0) {
     const [{ data: sessionsData }, { data: slotEnrollments }] =
@@ -284,6 +322,8 @@ export async function loadStudentDashboardData(
             class_id,
             classes (
               title,
+              location_type,
+              location_note,
               organizations (name)
             )
           `,
@@ -307,11 +347,13 @@ export async function loadStudentDashboardData(
     const sessions = (sessionsData ?? []) as (ClassSession & {
       classes: {
         title: string;
+        location_type: string | null;
+        location_note: string | null;
         organizations: { name: string } | null;
       } | null;
     })[];
 
-    upcomingSessions = sessions
+    const allUpcoming = sessions
       .filter((session) => {
         // Only meetings that are still on — postponed ones leave Next up
         if (session.status !== "scheduled" || session.starts_at < now) {
@@ -323,23 +365,37 @@ export async function loadStudentDashboardData(
         }
         return true;
       })
-      .map((session) => ({
-        id: session.id,
-        classId: session.class_id,
-        startsAt: session.starts_at,
-        endsAt: session.ends_at,
-        status: session.status,
-        classTitle: session.classes?.title ?? "Class",
-        orgName: session.classes?.organizations?.name ?? null,
-      }))
-      .slice(0, 3);
-  }
+      .map((session) => {
+        const location =
+          [
+            formatLocationType(session.classes?.location_type),
+            session.classes?.location_note,
+          ]
+            .filter(Boolean)
+            .join(" · ") || null;
 
-  const nextByClass = new Map<string, string>();
-  for (const session of upcomingSessions) {
-    if (!nextByClass.has(session.classId)) {
-      nextByClass.set(session.classId, session.startsAt);
+        return {
+          id: session.id,
+          classId: session.class_id,
+          startsAt: session.starts_at,
+          endsAt: session.ends_at,
+          status: session.status,
+          classTitle: session.classes?.title ?? "Class",
+          orgName: session.classes?.organizations?.name ?? null,
+          location,
+        };
+      });
+
+    for (const session of allUpcoming) {
+      if (!nextByClass.has(session.classId)) {
+        nextByClass.set(session.classId, session.startsAt);
+      }
     }
+
+    const horizon = Date.now() + 7 * 24 * 60 * 60 * 1000;
+    upcomingSessions = allUpcoming.filter(
+      (session) => new Date(session.startsAt).getTime() <= horizon,
+    );
   }
 
   const enrichedClasses = myClasses.map((cls) => {
@@ -380,6 +436,7 @@ export async function loadStudentDashboardData(
     needsProfile,
     joinableOrgs,
     linkedInstitutions,
+    institutionInvites,
     myClasses: enrichedClasses,
     upcomingSessions,
     notifications,
