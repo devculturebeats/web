@@ -4,7 +4,7 @@ import { useState, useTransition } from "react";
 import { toast } from "sonner";
 
 import { updateAcademyDiscoverability } from "@/app/(app)/teacher/settings/actions";
-import { Label } from "@/components/ui/label";
+import { Button } from "@/components/ui/button";
 
 export function TeacherDiscoverabilitySetting({
   initialDiscoverable,
@@ -14,7 +14,8 @@ export function TeacherDiscoverabilitySetting({
   const [discoverable, setDiscoverable] = useState(initialDiscoverable);
   const [isPending, startTransition] = useTransition();
 
-  const onToggle = (next: boolean) => {
+  const onToggle = () => {
+    const next = !discoverable;
     const previous = discoverable;
     setDiscoverable(next);
     startTransition(async () => {
@@ -26,31 +27,37 @@ export function TeacherDiscoverabilitySetting({
       }
       toast.success(
         next
-          ? "Academies can find your profile."
-          : "Your profile is hidden from academy search.",
+          ? "Academy discovery is now enabled."
+          : "Academy discovery is now disabled.",
       );
     });
   };
 
   return (
-    <label className="flex items-start gap-3">
-      <input
-        type="checkbox"
-        className="mt-1"
-        checked={discoverable}
-        disabled={isPending}
-        onChange={(e) => onToggle(e.target.checked)}
-      />
-      <span>
-        <Label className="font-medium">
-          Allow academies to find my profile
-        </Label>
-        <span className="mt-1 block text-sm text-muted-foreground">
-          When on, academies can look you up by your full email or 6-digit
-          teacher ID and send a join request. When off, you stay hidden from
-          that search — existing links and pending invites are unchanged.
-        </span>
-      </span>
-    </label>
+    <div className="space-y-4">
+      <p className="text-sm text-muted-foreground">
+        When enabled, academies can look you up by your full email or 6-digit
+        teacher ID and send a join request. When disabled, you stay hidden from
+        that search — existing links and pending invites are unchanged.
+      </p>
+
+      <div className="flex flex-wrap items-center gap-3">
+        <Button
+          type="button"
+          variant={discoverable ? "outline" : "default"}
+          disabled={isPending}
+          onClick={onToggle}
+        >
+          {isPending
+            ? "Saving…"
+            : discoverable
+              ? "Disable discovery"
+              : "Enable discovery"}
+        </Button>
+        <p className="text-sm font-medium">
+          Currently {discoverable ? "enabled" : "disabled"}
+        </p>
+      </div>
+    </div>
   );
 }
