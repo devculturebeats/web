@@ -34,7 +34,7 @@ function ApprovalBanner({ status }: { status: string }) {
         </CardTitle>
         <CardDescription>
           {isPending
-            ? "Thanks for signing up. You can update your profile while we review — schedule, classes, and requests unlock after approval."
+            ? "Schools can see you after approval."
             : "Contact support if you think this is a mistake."}
         </CardDescription>
       </CardHeader>
@@ -112,29 +112,8 @@ async function TeacherHome({
           <h1 className="font-heading text-2xl font-semibold tracking-tight">
             {firstName ? `Hi, ${firstName}` : "Welcome"}
           </h1>
-          <p className="mt-1 text-muted-foreground">
-            Your account is waiting for verification.
-          </p>
         </div>
         <ApprovalBanner status={approvalStatus} />
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">While you wait</CardTitle>
-            <CardDescription>
-              You can review or update your teacher profile. Availability,
-              personal classes, and requests stay locked until you&apos;re
-              approved.
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <Link
-              href="/teacher/profile"
-              className={cn(buttonVariants(), "inline-flex")}
-            >
-              View profile
-            </Link>
-          </CardContent>
-        </Card>
       </div>
     );
   }
