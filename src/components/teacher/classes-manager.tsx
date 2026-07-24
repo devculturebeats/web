@@ -10,6 +10,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { PaginatedList } from "@/components/ui/client-pagination";
 import type { ClassLifecycle, ClassSession } from "@/types/database";
 
 export type ClassStudent = {
@@ -48,45 +49,49 @@ function ClassCards({ classes }: { classes: TeacherClassData[] }) {
   return (
     <div className="space-y-3">
       <h2 className="font-heading text-lg font-semibold">Scheduled</h2>
-      <div className="grid gap-4">
-        {classes.map((cls) => (
-          <Card key={cls.id}>
-            <CardHeader className="pb-3">
-              <div>
-                <CardTitle className="text-base">
-                  <Link
-                    href={`/classes/${cls.id}`}
-                    className="hover:underline"
-                  >
-                    {cls.title}
-                  </Link>
-                </CardTitle>
-                <CardDescription>
-                  Your own listing
-                  {cls.skill && cls.skill !== cls.title
-                    ? ` · ${cls.skill}`
-                    : ""}
-                  {cls.rateLabel ? ` · ${cls.rateLabel}` : ""}
-                </CardDescription>
-              </div>
-            </CardHeader>
-              <CardContent>
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <p className="text-sm text-muted-foreground">
-                    {cls.students.length} student
-                    {cls.students.length === 1 ? "" : "s"} enrolled
-                  </p>
-                  <Link
-                    href={`/classes/${cls.id}`}
-                    className="text-sm font-medium text-primary underline-offset-4 hover:underline"
-                  >
-                    Open class
-                  </Link>
-                </div>
-              </CardContent>
-          </Card>
-        ))}
-      </div>
+      <PaginatedList items={classes} pageSize={10} label="classes">
+        {(pageItems) => (
+          <div className="grid gap-4">
+            {pageItems.map((cls) => (
+              <Card key={cls.id}>
+                <CardHeader className="pb-3">
+                  <div>
+                    <CardTitle className="text-base">
+                      <Link
+                        href={`/classes/${cls.id}`}
+                        className="hover:underline"
+                      >
+                        {cls.title}
+                      </Link>
+                    </CardTitle>
+                    <CardDescription>
+                      Your own listing
+                      {cls.skill && cls.skill !== cls.title
+                        ? ` · ${cls.skill}`
+                        : ""}
+                      {cls.rateLabel ? ` · ${cls.rateLabel}` : ""}
+                    </CardDescription>
+                  </div>
+                </CardHeader>
+                <CardContent>
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <p className="text-sm text-muted-foreground">
+                      {cls.students.length} student
+                      {cls.students.length === 1 ? "" : "s"} enrolled
+                    </p>
+                    <Link
+                      href={`/classes/${cls.id}`}
+                      className="text-sm font-medium text-primary underline-offset-4 hover:underline"
+                    >
+                      Open class
+                    </Link>
+                  </div>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        )}
+      </PaginatedList>
     </div>
   );
 }

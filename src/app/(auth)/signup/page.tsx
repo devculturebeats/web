@@ -16,7 +16,7 @@ export default async function SignupPage({
   searchParams: Promise<{ role?: string }>;
 }) {
   const { role } = await searchParams;
-  const validRoles = ["teacher", "student", "school_admin", "academy_admin"];
+  const validRoles = ["teacher", "student", "school_admin"];
   const defaultRole = validRoles.includes(role ?? "")
     ? (role as AppRole)
     : undefined;

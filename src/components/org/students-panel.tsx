@@ -7,13 +7,19 @@ import { z } from "zod";
 import { toast } from "sonner";
 
 import { StudentBulkImport } from "@/components/org/student-bulk-import";
-import { issueStudentLogin } from "@/lib/org-student-roster";
+import {
+  attachParentToStudent,
+  issueParentLogin,
+  issueStudentLogin,
+  provisionParentForStudent,
+} from "@/lib/org-student-roster";
 import { linkStudent } from "@/lib/org-actions";
 import {
   formatStudentContactLine,
   isSyntheticStudentEmail,
 } from "@/lib/student-credentials";
 import { Button } from "@/components/ui/button";
+import { PaginatedList } from "@/components/ui/client-pagination";
 import {
   Dialog,
   DialogContent,
@@ -84,6 +90,13 @@ export function StudentsPanel({
     username: string;
     password: string;
   } | null>(null);
+  const [parentForStudent, setParentForStudent] = useState<{
+    studentProfileId: string;
+    studentName: string;
+  } | null>(null);
+  const [parentName, setParentName] = useState("");
+  const [parentEmail, setParentEmail] = useState("");
+  const [parentBusy, setParentBusy] = useState(false);
 
   const {
     register,
@@ -138,6 +151,77 @@ export function StudentsPanel({
         password: result.password,
       });
       toast.success("Login created — copy and share it now.");
+    });
+  };
+
+  const onAttachParent = () => {
+    if (!parentForStudent) return;
+    const email = parentEmail.trim();
+    const name = parentName.trim();
+    if (!email && !name) {
+      toast.error("Enter a parent email or name to provision.");
+      return;
+    }
+
+    setParentBusy(true);
+    startTransition(async () => {
+      if (email && !name) {
+        const result = await attachParentToStudent(
+          parentForStudent.studentProfileId,
+          email,
+          null,
+          { autoAccept: true },
+        );
+        setParentBusy(false);
+        if (result.error) {
+          toast.error(result.error);
+          return;
+        }
+        toast.success(
+          result.mode === "linked"
+            ? "Parent linked."
+            : "Parent invite sent — they can accept after signing up.",
+        );
+        setParentForStudent(null);
+        setParentEmail("");
+        setParentName("");
+        return;
+      }
+
+      const result = await provisionParentForStudent(
+        parentForStudent.studentProfileId,
+        name || "Parent",
+        email || null,
+      );
+      if (result.error) {
+        setParentBusy(false);
+        toast.error(result.error);
+        return;
+      }
+
+      if (result.parentProfileId) {
+        const login = await issueParentLogin(result.parentProfileId);
+        setParentBusy(false);
+        if (login.error) {
+          toast.success("Parent linked. Create a login from their profile later.");
+        } else if (login.username && login.password) {
+          setIssuedLogin({
+            full_name: login.full_name || name || "Parent",
+            username: login.username,
+            password: login.password,
+          });
+          toast.success("Parent linked — share the login below.");
+        } else {
+          toast.success("Parent linked.");
+        }
+      } else {
+        setParentBusy(false);
+        toast.success("Parent linked.");
+      }
+
+      setParentForStudent(null);
+      setParentEmail("");
+      setParentName("");
     });
   };
 
@@ -213,28 +297,32 @@ export function StudentsPanel({
           <h3 className="text-sm font-medium text-muted-foreground">
             Waiting for acceptance
           </h3>
-          <ul className="divide-y rounded-lg border">
-            {pendingInvites.map((invite) => (
-              <li key={invite.id} className="px-4 py-3">
-                <p className="font-medium">
-                  {invite.student?.full_name || "Pending signup"}
-                </p>
-                <p className="text-sm text-muted-foreground">
-                  {invite.student_email || invite.student?.email}
-                </p>
-                {!invite.student_profile_id && (
-                  <p className="mt-1 text-xs text-muted-foreground">
-                    Waiting for them to create an account and accept
-                  </p>
-                )}
-                {invite.batch && (
-                  <p className="mt-1 text-xs text-muted-foreground">
-                    Batch: {invite.batch.name}
-                  </p>
-                )}
-              </li>
-            ))}
-          </ul>
+          <PaginatedList items={pendingInvites} pageSize={10} label="invites">
+            {(pageItems) => (
+              <ul className="divide-y rounded-lg border">
+                {pageItems.map((invite) => (
+                  <li key={invite.id} className="px-4 py-3">
+                    <p className="font-medium">
+                      {invite.student?.full_name || "Pending signup"}
+                    </p>
+                    <p className="text-sm text-muted-foreground">
+                      {invite.student_email || invite.student?.email}
+                    </p>
+                    {!invite.student_profile_id && (
+                      <p className="mt-1 text-xs text-muted-foreground">
+                        Waiting for them to create an account and accept
+                      </p>
+                    )}
+                    {invite.batch && (
+                      <p className="mt-1 text-xs text-muted-foreground">
+                        Batch: {invite.batch.name}
+                      </p>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </PaginatedList>
         </div>
       )}
 
@@ -247,56 +335,78 @@ export function StudentsPanel({
             No linked students yet.
           </p>
         ) : (
-          <ul className="divide-y rounded-lg border">
-            {students.map((link) => {
-              const hasUsername = Boolean(link.student?.username);
-              const needsUsernameLogin =
-                !hasUsername &&
-                isSyntheticStudentEmail(link.student?.email);
-              // Real email already is a login — only offer username create for
-              // roster kids without email. Reset stays available once issued.
-              const showLoginAction = needsUsernameLogin || hasUsername;
+          <PaginatedList items={students} pageSize={20} label="students">
+            {(pageItems) => (
+              <ul className="divide-y rounded-lg border">
+                {pageItems.map((link) => {
+                  const hasUsername = Boolean(link.student?.username);
+                  const needsUsernameLogin =
+                    !hasUsername &&
+                    isSyntheticStudentEmail(link.student?.email);
+                  const showLoginAction = needsUsernameLogin || hasUsername;
 
-              return (
-                <li
-                  key={link.id}
-                  className="flex flex-wrap items-start justify-between gap-3 px-4 py-3"
-                >
-                  <div>
-                    <p className="font-medium">
-                      {link.student?.full_name || "Unknown student"}
-                    </p>
-                    <p className="text-sm text-muted-foreground">
-                      {formatStudentContactLine({
-                        email: link.student?.email,
-                        username: link.student?.username,
-                      })}
-                    </p>
-                    {link.batch && (
-                      <p className="mt-1 text-xs text-muted-foreground">
-                        Batch: {link.batch.name}
-                      </p>
-                    )}
-                  </div>
-                  {!disabled && showLoginAction && (
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant={hasUsername ? "outline" : "default"}
-                      disabled={loginBusyId === link.student_profile_id}
-                      onClick={() => onIssueLogin(link.student_profile_id)}
+                  return (
+                    <li
+                      key={link.id}
+                      className="flex flex-wrap items-start justify-between gap-3 px-4 py-3"
                     >
-                      {loginBusyId === link.student_profile_id
-                        ? "Working…"
-                        : hasUsername
-                          ? "Reset password"
-                          : "Create login"}
-                    </Button>
-                  )}
-                </li>
-              );
-            })}
-          </ul>
+                      <div>
+                        <p className="font-medium">
+                          {link.student?.full_name || "Unknown student"}
+                        </p>
+                        <p className="text-sm text-muted-foreground">
+                          {formatStudentContactLine({
+                            email: link.student?.email,
+                            username: link.student?.username,
+                          })}
+                        </p>
+                        {link.batch && (
+                          <p className="mt-1 text-xs text-muted-foreground">
+                            Batch: {link.batch.name}
+                          </p>
+                        )}
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        {!disabled && (
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            onClick={() =>
+                              setParentForStudent({
+                                studentProfileId: link.student_profile_id,
+                                studentName:
+                                  link.student?.full_name || "this student",
+                              })
+                            }
+                          >
+                            Add parent
+                          </Button>
+                        )}
+                        {!disabled && showLoginAction && (
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant={hasUsername ? "outline" : "default"}
+                            disabled={loginBusyId === link.student_profile_id}
+                            onClick={() =>
+                              onIssueLogin(link.student_profile_id)
+                            }
+                          >
+                            {loginBusyId === link.student_profile_id
+                              ? "Working…"
+                              : hasUsername
+                                ? "Reset password"
+                                : "Create login"}
+                          </Button>
+                        )}
+                      </div>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+          </PaginatedList>
         )}
       </div>
 
@@ -346,6 +456,67 @@ export function StudentsPanel({
             </Button>
             <Button type="button" onClick={() => setIssuedLogin(null)}>
               Done
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={Boolean(parentForStudent)}
+        onOpenChange={(open) => {
+          if (!open) {
+            setParentForStudent(null);
+            setParentEmail("");
+            setParentName("");
+          }
+        }}
+      >
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Add parent</DialogTitle>
+            <DialogDescription>
+              Link a parent for {parentForStudent?.studentName}. Email alone
+              invites or auto-links an existing parent. Name (+ optional email)
+              provisions a parent login.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div className="space-y-2">
+              <Label htmlFor="parent-attach-email">Parent email</Label>
+              <Input
+                id="parent-attach-email"
+                type="email"
+                value={parentEmail}
+                onChange={(e) => setParentEmail(e.target.value)}
+                placeholder="parent@example.com"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="parent-attach-name">
+                Parent name (to create account)
+              </Label>
+              <Input
+                id="parent-attach-name"
+                value={parentName}
+                onChange={(e) => setParentName(e.target.value)}
+                placeholder="Optional if email account already exists"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setParentForStudent(null)}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              disabled={parentBusy || isPending}
+              onClick={onAttachParent}
+            >
+              {parentBusy ? "Saving…" : "Save"}
             </Button>
           </DialogFooter>
         </DialogContent>

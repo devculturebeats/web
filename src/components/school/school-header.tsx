@@ -10,7 +10,10 @@ export function SchoolHeader({ org }: { org: Organization }) {
           {org.name}
         </h1>
         <p className="mt-1 text-sm text-muted-foreground">
-          {[org.city, org.area].filter(Boolean).join(", ") || "School portal"}
+          School ID {org.lookup_code}
+          {[org.city, org.area].filter(Boolean).length
+            ? ` · ${[org.city, org.area].filter(Boolean).join(", ")}`
+            : ""}
         </p>
       </div>
       {org.approval_status !== "approved" && (

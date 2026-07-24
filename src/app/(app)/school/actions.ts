@@ -47,6 +47,59 @@ function proposedSlotFields(slots: WeekDaySlot[]) {
   };
 }
 
+export async function submitTeacherNeed(
+  formData: FormData,
+): Promise<SchoolActionState> {
+  const org = await getCurrentOrganization();
+  if (!org) return { error: "Organization not found." };
+  if (org.type !== "school") {
+    return { error: "Only schools use this request flow." };
+  }
+
+  const approvalError = assertOrgApproved(org);
+  if (approvalError) return { error: approvalError };
+
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { error: "Not authenticated." };
+
+  const title = (formData.get("title") as string)?.trim() || null;
+  const skill = (formData.get("skill") as string)?.trim();
+  const message = (formData.get("message") as string)?.trim() || null;
+  const { slots, error: slotsError } = parseRequestedSlots(formData);
+  const { value: recurrence, error: recurrenceError } =
+    parseRecurrenceFromForm(formData);
+
+  if (!skill) return { error: "Skill is required." };
+  if (slotsError) return { error: slotsError };
+  if (recurrenceError) return { error: recurrenceError };
+
+  const proposed = proposedSlotFields(slots);
+  const recurrenceFields = recurrenceDbFields(recurrence);
+  const classTitle = title || skill;
+
+  const { error: classError } = await supabase.from("classes").insert({
+    organization_id: org.id,
+    title: classTitle,
+    skill,
+    status: "requested",
+    enrollment_mode: "assigned",
+    is_recurring: recurrence.mode !== "once" || slots.length > 1,
+    created_by: user.id,
+    description: message,
+    ...proposed,
+    ...recurrenceFields,
+  });
+
+  if (classError) return { error: classError.message };
+
+  revalidateSchoolPaths(["/school", "/school/classes", "/school/notify"]);
+  revalidatePath("/admin/requests");
+  return { success: true };
+}
+
 export async function matchTeachersForSlot(
   formData: FormData,
 ): Promise<SchoolActionState> {
@@ -161,17 +214,26 @@ export async function requestTeacher(
     return { error: classError?.message ?? "Failed to create class." };
   }
 
-  const { error: requestError } = await supabase.from("class_requests").insert({
-    class_id: classRow.id,
-    teacher_id: teacherId,
-    status: "requested",
-    request_kind: "assign",
-    message,
-    ...proposed,
-    ...recurrenceFields,
-  });
+  const requestMessage =
+    message?.trim() || "School teaching request.";
 
-  if (requestError) return { error: requestError.message };
+  const { data: requestRow, error: requestError } = await supabase
+    .from("class_requests")
+    .insert({
+      class_id: classRow.id,
+      teacher_id: teacherId,
+      status: "requested",
+      request_kind: "assign",
+      message: requestMessage,
+      ...proposed,
+      ...recurrenceFields,
+    })
+    .select("id")
+    .single();
+
+  if (requestError || !requestRow) {
+    return { error: requestError?.message ?? "Failed to create request." };
+  }
 
   revalidateSchoolPaths(["/school", "/school/classes", "/school/notify"]);
   return { success: true };
@@ -317,6 +379,11 @@ export async function requestScheduleUpdate(
   if (recurrenceError) return { error: recurrenceError };
 
   const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { error: "Not authenticated." };
+
   const { data: cls, error: classError } = await supabase
     .from("classes")
     .select("id, organization_id, teacher_id, status")
@@ -347,18 +414,26 @@ export async function requestScheduleUpdate(
 
   const proposed = proposedSlotFields(slots);
   const recurrenceFields = recurrenceDbFields(recurrence);
+  const requestMessage =
+    message?.trim() || "School schedule update request.";
 
-  const { error: requestError } = await supabase.from("class_requests").insert({
-    class_id: classId,
-    teacher_id: cls.teacher_id,
-    status: "requested",
-    request_kind: "schedule",
-    message,
-    ...proposed,
-    ...recurrenceFields,
-  });
+  const { data: requestRow, error: requestError } = await supabase
+    .from("class_requests")
+    .insert({
+      class_id: classId,
+      teacher_id: cls.teacher_id,
+      status: "requested",
+      request_kind: "schedule",
+      message: requestMessage,
+      ...proposed,
+      ...recurrenceFields,
+    })
+    .select("id")
+    .single();
 
-  if (requestError) return { error: requestError.message };
+  if (requestError || !requestRow) {
+    return { error: requestError?.message ?? "Failed to create request." };
+  }
 
   revalidateSchoolPaths(["/school/classes"]);
   revalidatePath("/teacher/requests");

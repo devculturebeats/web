@@ -4,6 +4,7 @@ import {
   ClassDetail,
   type ClassDetailData,
   type ClassRosterEntry,
+  type PendingReplacement,
 } from "@/components/classes/class-detail";
 import { formatClassRate, formatLocationType } from "@/lib/class-pricing";
 import { getCurrentProfile } from "@/lib/profiles";
@@ -28,6 +29,8 @@ type ClassRow = {
   proposed_start_time: string | null;
   proposed_end_time: string | null;
   cancellation_reason: string | null;
+  needs_rematch: boolean;
+  rematch_reason: string | null;
   location_type: string | null;
   location_note: string | null;
   rate_amount: number | null;
@@ -107,6 +110,28 @@ async function canAccessClass(
     }
   }
 
+  if (profile.role === "parent") {
+    const { data: links } = await supabase
+      .from("parent_student_links")
+      .select("student_profile_id")
+      .eq("parent_profile_id", profile.id);
+
+    const childIds = (links ?? []).map((row) => row.student_profile_id);
+    if (childIds.length > 0) {
+      const { data: enrollment } = await supabase
+        .from("class_enrollments")
+        .select("id")
+        .eq("class_id", cls.id)
+        .in("student_profile_id", childIds)
+        .limit(1)
+        .maybeSingle();
+
+      if (enrollment) {
+        return { allowed: true, canManage: false };
+      }
+    }
+  }
+
   return { allowed: false, canManage: false };
 }
 
@@ -141,6 +166,8 @@ export default async function ClassDetailPage({
       proposed_start_time,
       proposed_end_time,
       cancellation_reason,
+      needs_rematch,
+      rematch_reason,
       location_type,
       location_note,
       rate_amount,
@@ -172,6 +199,7 @@ export default async function ClassDetailPage({
     { data: noteRows },
     { data: attendanceRows },
     { data: sessionEnrollments },
+    { data: pendingRequestRows },
   ] = await Promise.all([
     supabase
       .from("class_enrollments")
@@ -195,6 +223,23 @@ export default async function ClassDetailPage({
       .from("class_session_enrollments")
       .select("session_id, student_profile_id")
       .eq("class_id", classId),
+    supabase
+      .from("class_requests")
+      .select(
+        `
+        id,
+        message,
+        created_at,
+        teacher_id,
+        teachers (
+          profiles (full_name)
+        )
+      `,
+      )
+      .eq("class_id", classId)
+      .eq("status", "requested")
+      .eq("request_kind", "assign")
+      .order("created_at", { ascending: false }),
   ]);
 
   const profileIds = [
@@ -290,6 +335,45 @@ export default async function ClassDetailPage({
     (a, b) => new Date(a.starts_at).getTime() - new Date(b.starts_at).getTime(),
   );
 
+  const pendingReplacements: PendingReplacement[] = (pendingRequestRows ?? [])
+    .filter((row) => row.teacher_id !== cls.teacher_id)
+    .map((row) => {
+      const teacher = (
+        Array.isArray(row.teachers) ? row.teachers[0] : row.teachers
+      ) as {
+        profiles: { full_name: string } | { full_name: string }[] | null;
+      } | null;
+      const teacherProfile = Array.isArray(teacher?.profiles)
+        ? teacher?.profiles[0]
+        : teacher?.profiles;
+      return {
+        id: row.id,
+        teacherName: teacherProfile?.full_name?.trim() || "Teacher",
+        message: row.message,
+        createdAt: row.created_at,
+      };
+    });
+
+  const isSuperadmin = profile.role === "superadmin";
+  const isOrgAdmin =
+    profile.role === "academy_admin" || profile.role === "school_admin";
+  const orgType = cls.organizations?.type ?? null;
+
+  // Same actors as first-time assignment:
+  // - Academy admin picks a linked member
+  // - CultureBeats admin rematches schools (also via /admin/requests)
+  const canReplaceTeacher =
+    access.canManage &&
+    !!cls.organization_id &&
+    (isSuperadmin || (orgType === "academy" && isOrgAdmin));
+
+  const canRequestSchoolRematch =
+    access.canManage &&
+    !isSuperadmin &&
+    orgType === "school" &&
+    isOrgAdmin &&
+    !["cancelled", "rejected", "requested"].includes(cls.status);
+
   const detail: ClassDetailData = {
     id: cls.id,
     title: cls.title,
@@ -340,7 +424,13 @@ export default async function ClassDetailPage({
         createdAt: note.created_at,
       };
     }),
+    pendingReplacements,
+    needsRematch: cls.needs_rematch,
+    rematchReason: cls.rematch_reason,
     canManage: access.canManage,
+    canReplaceTeacher,
+    canRequestSchoolRematch,
+    isSuperadmin,
     canEnroll:
       profile.role === "student" &&
       !rosterMap.has(profile.id) &&

@@ -1,6 +1,9 @@
+"use client";
+
 import Link from "next/link";
 
 import { LifecycleBadge } from "@/components/lifecycle-badge";
+import { PaginatedList } from "@/components/ui/client-pagination";
 import { DAYS_OF_WEEK } from "@/lib/constants";
 import { formatDateTime, formatTime } from "@/lib/dates";
 import { formatRecurrenceLabel } from "@/lib/recurrence";
@@ -70,96 +73,103 @@ export function SchoolScheduledClasses({
   }
 
   return (
-    <ul className="overflow-hidden rounded-xl border bg-card">
-      {active.map((cls, index) => {
-        const upcoming = [...cls.sessions]
-          .filter((s) => s.status === "scheduled" || s.status === "postponed")
-          .sort(
-            (a, b) =>
-              new Date(a.starts_at).getTime() -
-              new Date(b.starts_at).getTime(),
-          )
-          .filter(
-            (s) => new Date(s.ends_at || s.starts_at).getTime() >= Date.now(),
-          );
+    <PaginatedList items={active} pageSize={10} label="classes">
+      {(pageItems) => (
+        <ul className="overflow-hidden rounded-xl border bg-card">
+          {pageItems.map((cls, index) => {
+            const upcoming = [...cls.sessions]
+              .filter((s) => s.status === "scheduled" || s.status === "postponed")
+              .sort(
+                (a, b) =>
+                  new Date(a.starts_at).getTime() -
+                  new Date(b.starts_at).getTime(),
+              )
+              .filter(
+                (s) =>
+                  new Date(s.ends_at || s.starts_at).getTime() >= Date.now(),
+              );
 
-        const next = upcoming[0] ?? null;
-        const laterCount = Math.max(upcoming.length - 1, 0);
-        const pattern = weeklyPattern(cls);
-        const recurrence = shortRecurrence(cls);
-        const teacherName = cls.teacher?.profiles?.full_name ?? null;
-        const dateColumn = next ? dayParts(next.starts_at) : null;
+            const next = upcoming[0] ?? null;
+            const laterCount = Math.max(upcoming.length - 1, 0);
+            const pattern = weeklyPattern(cls);
+            const recurrence = shortRecurrence(cls);
+            const teacherName = cls.teacher?.profiles?.full_name ?? null;
+            const dateColumn = next ? dayParts(next.starts_at) : null;
 
-        return (
-          <li
-            key={cls.id}
-            className={cn(
-              "grid grid-cols-[4.5rem_1fr] sm:grid-cols-[5.5rem_1fr]",
-              index > 0 && "border-t",
-            )}
-          >
-            <div className="flex flex-col items-center justify-start border-r bg-muted/30 px-2 py-4 text-center">
-              {dateColumn ? (
-                <>
-                  <span className="text-[0.65rem] font-semibold uppercase tracking-wider text-muted-foreground">
-                    {dateColumn.weekday}
-                  </span>
-                  <span className="font-heading text-2xl font-semibold tabular-nums leading-none tracking-tight">
-                    {dateColumn.day}
-                  </span>
-                  <span className="mt-1 text-[0.65rem] uppercase tracking-wide text-muted-foreground">
-                    {dateColumn.month}
-                  </span>
-                </>
-              ) : (
-                <span className="text-[0.65rem] font-semibold uppercase tracking-wider text-muted-foreground">
-                  TBD
-                </span>
-              )}
-            </div>
-
-            <div className="flex flex-col gap-3 px-4 py-4 sm:flex-row sm:items-start sm:justify-between">
-              <div className="min-w-0 space-y-1">
-                <div className="flex flex-wrap items-center gap-2">
-                  <Link
-                    href={`/classes/${cls.id}`}
-                    className="font-heading text-base font-semibold hover:underline"
-                  >
-                    {cls.title}
-                  </Link>
-                  {cls.status !== "scheduled" && (
-                    <LifecycleBadge status={cls.status} />
+            return (
+              <li
+                key={cls.id}
+                className={cn(
+                  "grid grid-cols-[4.5rem_1fr] sm:grid-cols-[5.5rem_1fr]",
+                  index > 0 && "border-t",
+                )}
+              >
+                <div className="flex flex-col items-center justify-start border-r bg-muted/30 px-2 py-4 text-center">
+                  {dateColumn ? (
+                    <>
+                      <span className="text-[0.65rem] font-semibold uppercase tracking-wider text-muted-foreground">
+                        {dateColumn.weekday}
+                      </span>
+                      <span className="font-heading text-2xl font-semibold tabular-nums leading-none tracking-tight">
+                        {dateColumn.day}
+                      </span>
+                      <span className="mt-1 text-[0.65rem] uppercase tracking-wide text-muted-foreground">
+                        {dateColumn.month}
+                      </span>
+                    </>
+                  ) : (
+                    <span className="text-[0.65rem] font-semibold uppercase tracking-wider text-muted-foreground">
+                      TBD
+                    </span>
                   )}
                 </div>
 
-                <p className="text-sm text-muted-foreground">
-                  {[teacherName, pattern, recurrence]
-                    .filter(Boolean)
-                    .join(" · ")}
-                </p>
+                <div className="flex flex-col gap-3 px-4 py-4 sm:flex-row sm:items-start sm:justify-between">
+                  <div className="min-w-0 space-y-1">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <Link
+                        href={`/classes/${cls.id}`}
+                        className="font-heading text-base font-semibold hover:underline"
+                      >
+                        {cls.title}
+                      </Link>
+                      {cls.status !== "scheduled" && (
+                        <LifecycleBadge status={cls.status} />
+                      )}
+                    </div>
 
-                {next ? (
-                  <p className="text-sm text-muted-foreground">
-                    Next {sessionTime(next.starts_at)}
-                    {laterCount > 0 ? ` · ${laterCount} more upcoming` : ""}
-                  </p>
-                ) : (
-                  <p className="text-sm text-muted-foreground">
-                    No upcoming meetings yet
-                  </p>
-                )}
-              </div>
+                    <p className="text-sm text-muted-foreground">
+                      {[teacherName, pattern, recurrence]
+                        .filter(Boolean)
+                        .join(" · ")}
+                    </p>
 
-              <Link
-                href={`/classes/${cls.id}`}
-                className="shrink-0 text-sm font-medium text-primary underline-offset-4 hover:underline"
-              >
-                Open
-              </Link>
-            </div>
-          </li>
-        );
-      })}
-    </ul>
+                    {next ? (
+                      <p className="text-sm text-muted-foreground">
+                        Next {sessionTime(next.starts_at)}
+                        {laterCount > 0
+                          ? ` · ${laterCount} more upcoming`
+                          : ""}
+                      </p>
+                    ) : (
+                      <p className="text-sm text-muted-foreground">
+                        No upcoming meetings yet
+                      </p>
+                    )}
+                  </div>
+
+                  <Link
+                    href={`/classes/${cls.id}`}
+                    className="shrink-0 text-sm font-medium text-primary underline-offset-4 hover:underline"
+                  >
+                    Open
+                  </Link>
+                </div>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </PaginatedList>
   );
 }

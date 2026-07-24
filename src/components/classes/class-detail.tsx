@@ -9,11 +9,16 @@ import {
   cancelClass,
   cancelSessionsScoped,
   deleteNote,
+  listReplacementTeachers,
   markAttendance,
+  markSessionOutcome,
   postponeSessionTo,
+  requestSchoolRematch,
+  requestTeacherReplacement,
   rescheduleSession,
   scheduleClassSessions,
   updateSessionStatus,
+  type ReplacementCandidate,
 } from "@/app/(app)/classes/[id]/actions";
 import { EnrollWithSlots } from "@/components/student/enroll-with-slots";
 import { LifecycleBadge } from "@/components/lifecycle-badge";
@@ -37,9 +42,19 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
+import {
+  PaginatedList,
+} from "@/components/ui/client-pagination";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { DAYS_OF_WEEK } from "@/lib/constants";
@@ -49,7 +64,12 @@ import {
   fromDatetimeLocalValue,
   toDatetimeLocalValue,
 } from "@/lib/dates";
-import type { ClassLifecycle, ClassSession, SessionScope } from "@/types/database";
+import type {
+  ClassLifecycle,
+  ClassSession,
+  SessionOutcome,
+  SessionScope,
+} from "@/types/database";
 
 export type ClassRosterEntry = {
   profileId: string;
@@ -62,6 +82,13 @@ export type ClassNoteEntry = {
   body: string;
   authorId: string | null;
   authorName: string;
+  createdAt: string;
+};
+
+export type PendingReplacement = {
+  id: string;
+  teacherName: string;
+  message: string | null;
   createdAt: string;
 };
 
@@ -91,7 +118,13 @@ export type ClassDetailData = {
   attendanceBySession: Record<string, Record<string, boolean>>;
   rosterBySession: Record<string, ClassRosterEntry[]>;
   notes: ClassNoteEntry[];
+  pendingReplacements: PendingReplacement[];
+  needsRematch: boolean;
+  rematchReason: string | null;
   canManage: boolean;
+  canReplaceTeacher: boolean;
+  canRequestSchoolRematch: boolean;
+  isSuperadmin: boolean;
   canEnroll: boolean;
   isEnrolled: boolean;
   currentUserId: string;
@@ -195,28 +228,35 @@ function AttendancePanel({
       </button>
       {open && (
         <div className="space-y-3">
-          <div className="space-y-2">
-            {roster.map((student) => (
-              <div key={student.profileId} className="flex items-center gap-2">
-                <Checkbox
-                  id={`${sessionId}-${student.profileId}`}
-                  checked={attendance[student.profileId] ?? false}
-                  onCheckedChange={(checked) =>
-                    setAttendance((prev) => ({
-                      ...prev,
-                      [student.profileId]: checked === true,
-                    }))
-                  }
-                />
-                <Label
-                  htmlFor={`${sessionId}-${student.profileId}`}
-                  className="font-normal"
-                >
-                  {student.fullName}
-                </Label>
+          <PaginatedList items={roster} pageSize={25} label="students">
+            {(pageItems) => (
+              <div className="space-y-2">
+                {pageItems.map((student) => (
+                  <div
+                    key={student.profileId}
+                    className="flex items-center gap-2"
+                  >
+                    <Checkbox
+                      id={`${sessionId}-${student.profileId}`}
+                      checked={attendance[student.profileId] ?? false}
+                      onCheckedChange={(checked) =>
+                        setAttendance((prev) => ({
+                          ...prev,
+                          [student.profileId]: checked === true,
+                        }))
+                      }
+                    />
+                    <Label
+                      htmlFor={`${sessionId}-${student.profileId}`}
+                      className="font-normal"
+                    >
+                      {student.fullName}
+                    </Label>
+                  </div>
+                ))}
               </div>
-            ))}
-          </div>
+            )}
+          </PaginatedList>
           <Button size="sm" disabled={isPending} onClick={handleSave}>
             Save attendance
           </Button>
@@ -383,6 +423,14 @@ function ReschedulePanel({
   );
 }
 
+function outcomeLabel(outcome: SessionOutcome | null | undefined) {
+  if (!outcome) return null;
+  if (outcome === "held") return "Held";
+  if (outcome === "teacher_no_show") return "Teacher no-show";
+  if (outcome === "student_no_show") return "Student no-show";
+  return outcome;
+}
+
 function CancelSessionButton({
   sessionId,
   showSeries,
@@ -392,10 +440,11 @@ function CancelSessionButton({
 }) {
   const [isPending, startTransition] = useTransition();
   const [scope, setScope] = useState<SessionScope>("one");
+  const [reason, setReason] = useState("");
 
   const handleCancel = () => {
     startTransition(async () => {
-      const result = await cancelSessionsScoped(sessionId, scope);
+      const result = await cancelSessionsScoped(sessionId, scope, reason);
       if (result.error) {
         toast.error(result.error);
         return;
@@ -403,6 +452,7 @@ function CancelSessionButton({
       toast.success(
         scope === "series" ? "Sessions cancelled" : "Session cancelled",
       );
+      setReason("");
     });
   };
 
@@ -428,6 +478,18 @@ function CancelSessionButton({
           onChange={setScope}
           showSeries={showSeries}
         />
+        <div className="space-y-2">
+          <Label htmlFor={`cancel-session-reason-${sessionId}`}>
+            Reason (optional)
+          </Label>
+          <Textarea
+            id={`cancel-session-reason-${sessionId}`}
+            value={reason}
+            onChange={(event) => setReason(event.target.value)}
+            placeholder="Why is this session cancelled?"
+            rows={2}
+          />
+        </div>
         <AlertDialogFooter>
           <AlertDialogCancel>Keep session</AlertDialogCancel>
           <AlertDialogAction
@@ -440,6 +502,148 @@ function CancelSessionButton({
         </AlertDialogFooter>
       </AlertDialogContent>
     </AlertDialog>
+  );
+}
+
+function HeldButton({
+  sessionId,
+  startsAt,
+  label = "Held",
+}: {
+  sessionId: string;
+  startsAt: string;
+  label?: string;
+}) {
+  const [isPending, startTransition] = useTransition();
+  const startsMs = new Date(startsAt).getTime();
+  const isFuture =
+    Number.isFinite(startsMs) && startsMs > Date.now() + 15 * 60 * 1000;
+
+  const handleHeld = () => {
+    startTransition(async () => {
+      const result = await markSessionOutcome(sessionId, "held");
+      if (result.error) {
+        toast.error(result.error);
+        return;
+      }
+      toast.success("Session marked held");
+    });
+  };
+
+  return (
+    <AlertDialog>
+      <AlertDialogTrigger
+        render={
+          <Button size="sm" variant={label === "Held" ? "default" : "outline"} disabled={isPending} />
+        }
+      >
+        {label}
+      </AlertDialogTrigger>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>Mark session as held?</AlertDialogTitle>
+          <AlertDialogDescription>
+            {isFuture
+              ? "This session hasn’t started yet. Mark it held after the class time."
+              : "Confirms the session took place as planned."}
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel>Back</AlertDialogCancel>
+          <AlertDialogAction
+            disabled={isPending || isFuture}
+            onClick={handleHeld}
+          >
+            Mark held
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+  );
+}
+
+function NoShowButtons({ sessionId }: { sessionId: string }) {
+  const [isPending, startTransition] = useTransition();
+  const [reason, setReason] = useState("");
+  const [open, setOpen] = useState<SessionOutcome | null>(null);
+
+  const handleConfirm = (outcome: SessionOutcome) => {
+    startTransition(async () => {
+      const result = await markSessionOutcome(sessionId, outcome, reason);
+      if (result.error) {
+        toast.error(result.error);
+        return;
+      }
+      toast.success(
+        outcome === "teacher_no_show"
+          ? "Marked teacher no-show"
+          : "Marked student no-show",
+      );
+      setReason("");
+      setOpen(null);
+    });
+  };
+
+  return (
+    <>
+      <Button
+        size="sm"
+        variant="outline"
+        disabled={isPending}
+        onClick={() => setOpen("teacher_no_show")}
+      >
+        Teacher no-show
+      </Button>
+      <Button
+        size="sm"
+        variant="outline"
+        disabled={isPending}
+        onClick={() => setOpen("student_no_show")}
+      >
+        Student no-show
+      </Button>
+      <AlertDialog
+        open={open !== null}
+        onOpenChange={(next) => {
+          if (!next) setOpen(null);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {open === "teacher_no_show"
+                ? "Mark teacher no-show?"
+                : "Mark student no-show?"}
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {open === "teacher_no_show"
+                ? "Records that the teacher did not attend. The session is cancelled."
+                : "Records that students did not attend while the teacher was available."}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <div className="space-y-2">
+            <Label htmlFor={`noshow-reason-${sessionId}`}>
+              Reason (optional)
+            </Label>
+            <Textarea
+              id={`noshow-reason-${sessionId}`}
+              value={reason}
+              onChange={(event) => setReason(event.target.value)}
+              rows={2}
+            />
+          </div>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Back</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={isPending || !open}
+              onClick={() => open && handleConfirm(open)}
+            >
+              Confirm
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </>
   );
 }
 
@@ -457,6 +661,7 @@ function SessionRow({
   showSeries: boolean;
 }) {
   const [isPending, startTransition] = useTransition();
+  const open = session.status === "scheduled" || session.status === "postponed";
 
   const handleStatus = (status: ClassLifecycle) => {
     startTransition(async () => {
@@ -484,27 +689,39 @@ function SessionRow({
               {session.session_note}
             </p>
           )}
+          {session.outcome && (
+            <p className="mt-1 text-xs font-medium">
+              Outcome: {outcomeLabel(session.outcome)}
+            </p>
+          )}
+          {session.cancellation_reason && (
+            <p className="mt-1 text-xs text-muted-foreground">
+              Reason: {session.cancellation_reason}
+            </p>
+          )}
         </div>
         <LifecycleBadge status={session.status} />
       </div>
 
-      {canManage && session.status === "scheduled" && (
+      {canManage && open && (
         <>
           <div className="flex flex-wrap gap-2">
             <CancelSessionButton
               sessionId={session.id}
               showSeries={showSeries}
             />
-            <Button
-              size="sm"
-              disabled={isPending}
-              onClick={() => handleStatus("completed")}
-            >
-              Complete
-            </Button>
+            <HeldButton sessionId={session.id} startsAt={session.starts_at} />
+            <NoShowButtons sessionId={session.id} />
           </div>
-          <PostponeToPanel session={session} />
-          <ReschedulePanel session={session} showSeries={showSeries} />
+          {session.status === "scheduled" && (
+            <>
+              <PostponeToPanel session={session} />
+              <ReschedulePanel session={session} showSeries={showSeries} />
+            </>
+          )}
+          {session.status === "postponed" && (
+            <ReschedulePanel session={session} showSeries={showSeries} />
+          )}
           <AttendancePanel
             sessionId={session.id}
             roster={roster}
@@ -513,10 +730,242 @@ function SessionRow({
         </>
       )}
 
-      {canManage && session.status === "postponed" && (
-        <ReschedulePanel session={session} showSeries={showSeries} />
+      {canManage && !open && !session.outcome && (
+        <div className="flex flex-wrap gap-2">
+          <HeldButton
+            sessionId={session.id}
+            startsAt={session.starts_at}
+            label="Mark held"
+          />
+          <NoShowButtons sessionId={session.id} />
+          {session.status === "cancelled" && (
+            <Button
+              size="sm"
+              variant="ghost"
+              disabled={isPending}
+              onClick={() => handleStatus("scheduled")}
+            >
+              Reopen
+            </Button>
+          )}
+        </div>
       )}
     </div>
+  );
+}
+
+function ReplaceTeacherPanel({
+  classId,
+  orgType,
+  currentTeacherName,
+  pending,
+  canReplace,
+  canRequestSchoolRematch,
+  needsRematch,
+  rematchReason,
+  isSuperadmin,
+}: {
+  classId: string;
+  orgType: string | null;
+  currentTeacherName: string | null;
+  pending: PendingReplacement[];
+  canReplace: boolean;
+  canRequestSchoolRematch: boolean;
+  needsRematch: boolean;
+  rematchReason: string | null;
+  isSuperadmin: boolean;
+}) {
+  const [isPending, startTransition] = useTransition();
+  const [teachers, setTeachers] = useState<ReplacementCandidate[]>([]);
+  const [loaded, setLoaded] = useState(false);
+  const [teacherId, setTeacherId] = useState<string>("");
+  const [reason, setReason] = useState("");
+  const [direct, setDirect] = useState(false);
+
+  const loadTeachers = () => {
+    if (loaded || !canReplace) return;
+    startTransition(async () => {
+      const result = await listReplacementTeachers(classId);
+      if (result.error && !(result.teachers && result.teachers.length === 0)) {
+        toast.error(result.error);
+        return;
+      }
+      setTeachers(result.teachers ?? []);
+      setLoaded(true);
+    });
+  };
+
+  // Schools flag CultureBeats (same as submitting a need); they don't pick teachers.
+  if (canRequestSchoolRematch && !canReplace) {
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Need a replacement?</CardTitle>
+          <CardDescription>
+            Same as a new teacher need: ask CultureBeats to match another
+            teacher. You don&apos;t assign teachers directly.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          {needsRematch ? (
+            <p className="text-sm text-muted-foreground">
+              Rematch requested
+              {rematchReason ? `: ${rematchReason}` : ""}. CultureBeats will
+              match a replacement from School requests.
+            </p>
+          ) : (
+            <>
+              <div className="space-y-2">
+                <Label htmlFor={`school-rematch-reason-${classId}`}>
+                  Reason (optional)
+                </Label>
+                <Textarea
+                  id={`school-rematch-reason-${classId}`}
+                  value={reason}
+                  onChange={(event) => setReason(event.target.value)}
+                  placeholder="Why do you need a new teacher?"
+                  rows={2}
+                />
+              </div>
+              <Button
+                disabled={isPending}
+                onClick={() => {
+                  startTransition(async () => {
+                    const result = await requestSchoolRematch(classId, reason);
+                    if (result.error) {
+                      toast.error(result.error);
+                      return;
+                    }
+                    toast.success("Rematch sent to CultureBeats");
+                    setReason("");
+                  });
+                }}
+              >
+                Ask CultureBeats to rematch
+              </Button>
+            </>
+          )}
+          {pending.length > 0 && (
+            <div className="space-y-1 text-sm text-muted-foreground">
+              {pending.map((row) => (
+                <p key={row.id}>
+                  Pending with teacher: {row.teacherName}
+                  {row.message ? ` — ${row.message}` : ""}
+                </p>
+              ))}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+    );
+  }
+
+  if (!canReplace) return null;
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-base">
+          {orgType === "school" ? "Rematch teacher" : "Find replacement"}
+        </CardTitle>
+        <CardDescription>
+          {currentTeacherName
+            ? `Current teacher: ${currentTeacherName}. `
+            : "No teacher assigned. "}
+          {orgType === "academy"
+            ? "Same as assigning the first time: choose a linked academy member. They must accept before the swap."
+            : "Same as matching a school need: send a request to a teacher (or swap directly)."}
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        {pending.length > 0 && (
+          <div className="space-y-1 rounded-md border bg-muted/30 p-3 text-sm">
+            {pending.map((row) => (
+              <p key={row.id}>
+                Pending request:{" "}
+                <span className="font-medium">{row.teacherName}</span>
+                {row.message ? ` — ${row.message}` : ""}
+              </p>
+            ))}
+          </div>
+        )}
+        <div className="space-y-2">
+          <Label>Replacement teacher</Label>
+          <Select
+            value={teacherId || undefined}
+            onValueChange={(value) => setTeacherId(value ?? "")}
+          >
+            <SelectTrigger className="w-full" onClick={loadTeachers}>
+              <SelectValue
+                placeholder={
+                  isPending && !loaded ? "Loading…" : "Select teacher"
+                }
+              />
+            </SelectTrigger>
+            <SelectContent>
+              {teachers.map((teacher) => (
+                <SelectItem key={teacher.id} value={teacher.id}>
+                  {teacher.name}
+                  {teacher.primarySkill ? ` · ${teacher.primarySkill}` : ""}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+        <div className="space-y-2">
+          <Label htmlFor={`replace-reason-${classId}`}>Reason (optional)</Label>
+          <Textarea
+            id={`replace-reason-${classId}`}
+            value={reason}
+            onChange={(event) => setReason(event.target.value)}
+            placeholder="Why does this class need a new teacher?"
+            rows={2}
+          />
+        </div>
+        {isSuperadmin && (
+          <div className="flex items-center gap-2">
+            <Checkbox
+              id={`direct-replace-${classId}`}
+              checked={direct}
+              onCheckedChange={(checked) => setDirect(checked === true)}
+            />
+            <Label
+              htmlFor={`direct-replace-${classId}`}
+              className="font-normal"
+            >
+              Swap immediately without teacher consent
+            </Label>
+          </div>
+        )}
+        <Button
+          disabled={isPending || !teacherId}
+          onClick={() => {
+            startTransition(async () => {
+              const result = await requestTeacherReplacement(
+                classId,
+                teacherId,
+                reason,
+                { direct: isSuperadmin && direct },
+              );
+              if (result.error) {
+                toast.error(result.error);
+                return;
+              }
+              toast.success(
+                isSuperadmin && direct
+                  ? "Teacher replaced"
+                  : "Replacement request sent",
+              );
+              setTeacherId("");
+              setReason("");
+              setDirect(false);
+            });
+          }}
+        >
+          {isSuperadmin && direct ? "Replace now" : "Send replacement request"}
+        </Button>
+      </CardContent>
+    </Card>
   );
 }
 
@@ -840,6 +1289,11 @@ export function ClassDetail({ data }: ClassDetailProps) {
             <CancelClassButton classId={data.id} classTitle={data.title} />
           </div>
         )}
+        {data.cancellationReason && (
+          <p className="mt-3 text-sm text-muted-foreground">
+            Cancelled: {data.cancellationReason}
+          </p>
+        )}
         {!data.canManage && data.canEnroll && (
           <div className="mt-4">
             <EnrollWithSlots
@@ -951,6 +1405,24 @@ export function ClassDetail({ data }: ClassDetailProps) {
               )}
             </CardContent>
           </Card>
+
+          {data.canManage &&
+            data.org &&
+            data.status !== "cancelled" &&
+            data.status !== "rejected" &&
+            (data.canReplaceTeacher || data.canRequestSchoolRematch) && (
+              <ReplaceTeacherPanel
+                classId={data.id}
+                orgType={data.org.type}
+                currentTeacherName={data.teacher?.name ?? null}
+                pending={data.pendingReplacements}
+                canReplace={data.canReplaceTeacher}
+                canRequestSchoolRematch={data.canRequestSchoolRematch}
+                needsRematch={data.needsRematch}
+                rematchReason={data.rematchReason}
+                isSuperadmin={data.isSuperadmin}
+              />
+            )}
         </TabsContent>
 
         <TabsContent value="sessions" className="mt-4 space-y-4">
@@ -991,31 +1463,59 @@ export function ClassDetail({ data }: ClassDetailProps) {
               {upcomingSessions.length > 0 && (
                 <div className="space-y-3">
                   <h3 className="text-sm font-medium">Upcoming</h3>
-                  {upcomingSessions.map((session) => (
-                    <SessionRow
-                      key={session.id}
-                      session={session}
-                      roster={data.rosterBySession[session.id] ?? data.roster}
-                      attendance={data.attendanceBySession[session.id] ?? {}}
-                      canManage={data.canManage}
-                      showSeries={hasSeries(session)}
-                    />
-                  ))}
+                  <PaginatedList
+                    items={upcomingSessions}
+                    pageSize={10}
+                    label="sessions"
+                  >
+                    {(pageItems) => (
+                      <div className="space-y-3">
+                        {pageItems.map((session) => (
+                          <SessionRow
+                            key={session.id}
+                            session={session}
+                            roster={
+                              data.rosterBySession[session.id] ?? data.roster
+                            }
+                            attendance={
+                              data.attendanceBySession[session.id] ?? {}
+                            }
+                            canManage={data.canManage}
+                            showSeries={hasSeries(session)}
+                          />
+                        ))}
+                      </div>
+                    )}
+                  </PaginatedList>
                 </div>
               )}
               {pastSessions.length > 0 && (
                 <div className="space-y-3">
                   <h3 className="text-sm font-medium">Past</h3>
-                  {pastSessions.map((session) => (
-                    <SessionRow
-                      key={session.id}
-                      session={session}
-                      roster={data.rosterBySession[session.id] ?? data.roster}
-                      attendance={data.attendanceBySession[session.id] ?? {}}
-                      canManage={data.canManage}
-                      showSeries={hasSeries(session)}
-                    />
-                  ))}
+                  <PaginatedList
+                    items={pastSessions}
+                    pageSize={10}
+                    label="sessions"
+                  >
+                    {(pageItems) => (
+                      <div className="space-y-3">
+                        {pageItems.map((session) => (
+                          <SessionRow
+                            key={session.id}
+                            session={session}
+                            roster={
+                              data.rosterBySession[session.id] ?? data.roster
+                            }
+                            attendance={
+                              data.attendanceBySession[session.id] ?? {}
+                            }
+                            canManage={data.canManage}
+                            showSeries={hasSeries(session)}
+                          />
+                        ))}
+                      </div>
+                    )}
+                  </PaginatedList>
                 </div>
               )}
             </>
@@ -1026,19 +1526,23 @@ export function ClassDetail({ data }: ClassDetailProps) {
           {!data.canManage ? null : data.roster.length === 0 ? (
             <p className="text-sm text-muted-foreground">No students enrolled.</p>
           ) : (
-            <ul className="divide-y rounded-lg border">
-              {data.roster.map((student) => (
-                <li
-                  key={student.profileId}
-                  className="flex items-center justify-between px-4 py-3"
-                >
-                  <span className="font-medium">{student.fullName}</span>
-                  <span className="text-xs capitalize text-muted-foreground">
-                    {student.source}
-                  </span>
-                </li>
-              ))}
-            </ul>
+            <PaginatedList items={data.roster} pageSize={25} label="students">
+              {(pageItems) => (
+                <ul className="divide-y rounded-lg border">
+                  {pageItems.map((student) => (
+                    <li
+                      key={student.profileId}
+                      className="flex items-center justify-between px-4 py-3"
+                    >
+                      <span className="font-medium">{student.fullName}</span>
+                      <span className="text-xs capitalize text-muted-foreground">
+                        {student.source}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </PaginatedList>
           )}
         </TabsContent>
 
@@ -1048,58 +1552,76 @@ export function ClassDetail({ data }: ClassDetailProps) {
               No sessions to show attendance for.
             </p>
           ) : (
-            data.sessions.map((session) => {
-              const records = data.attendanceBySession[session.id] ?? {};
-              const sessionRoster =
-                data.rosterBySession[session.id] ?? data.roster;
-              const markedCount = Object.values(records).filter(Boolean).length;
-              return (
-                <Card key={session.id}>
-                  <CardHeader className="pb-2">
-                    <CardTitle className="text-sm font-medium">
-                      {formatDateTime(session.starts_at)}
-                    </CardTitle>
-                    <CardDescription>
-                      {markedCount} present · {sessionRoster.length} enrolled
-                    </CardDescription>
-                  </CardHeader>
-                  <CardContent>
-                    {sessionRoster.length === 0 ? (
-                      <p className="text-sm text-muted-foreground">
-                        No students enrolled in this slot.
-                      </p>
-                    ) : (
-                      <ul className="space-y-1 text-sm">
-                        {sessionRoster.map((student) => (
-                          <li
-                            key={student.profileId}
-                            className="flex justify-between"
-                          >
-                            <span>{student.fullName}</span>
-                            <span className="text-muted-foreground">
-                              {student.profileId in records
-                                ? records[student.profileId]
-                                  ? "Present"
-                                  : "Absent"
-                                : "Not marked"}
-                            </span>
-                          </li>
-                        ))}
-                      </ul>
-                    )}
-                    {data.canManage && session.status === "scheduled" && (
-                      <div className="mt-3">
-                        <AttendancePanel
-                          sessionId={session.id}
-                          roster={sessionRoster}
-                          initialAttendance={records}
-                        />
-                      </div>
-                    )}
-                  </CardContent>
-                </Card>
-              );
-            })
+            <PaginatedList items={data.sessions} pageSize={10} label="sessions">
+              {(pageItems) => (
+                <div className="space-y-4">
+                  {pageItems.map((session) => {
+                    const records =
+                      data.attendanceBySession[session.id] ?? {};
+                    const sessionRoster =
+                      data.rosterBySession[session.id] ?? data.roster;
+                    const markedCount =
+                      Object.values(records).filter(Boolean).length;
+                    return (
+                      <Card key={session.id}>
+                        <CardHeader className="pb-2">
+                          <CardTitle className="text-sm font-medium">
+                            {formatDateTime(session.starts_at)}
+                          </CardTitle>
+                          <CardDescription>
+                            {markedCount} present · {sessionRoster.length}{" "}
+                            enrolled
+                          </CardDescription>
+                        </CardHeader>
+                        <CardContent>
+                          {sessionRoster.length === 0 ? (
+                            <p className="text-sm text-muted-foreground">
+                              No students enrolled in this slot.
+                            </p>
+                          ) : (
+                            <PaginatedList
+                              items={sessionRoster}
+                              pageSize={25}
+                              label="students"
+                            >
+                              {(rosterPage) => (
+                                <ul className="space-y-1 text-sm">
+                                  {rosterPage.map((student) => (
+                                    <li
+                                      key={student.profileId}
+                                      className="flex justify-between"
+                                    >
+                                      <span>{student.fullName}</span>
+                                      <span className="text-muted-foreground">
+                                        {student.profileId in records
+                                          ? records[student.profileId]
+                                            ? "Present"
+                                            : "Absent"
+                                          : "Not marked"}
+                                      </span>
+                                    </li>
+                                  ))}
+                                </ul>
+                              )}
+                            </PaginatedList>
+                          )}
+                          {data.canManage &&
+                            session.status === "scheduled" && (
+                              <div className="mt-3">
+                                <AttendancePanel
+                                  sessionId={session.id}
+                                  roster={sessionRoster}
+                                  initialAttendance={records}
+                                />
+                              </div>
+                            )}
+                        </CardContent>
+                      </Card>
+                    );
+                  })}
+                </div>
+              )}
+            </PaginatedList>
           )}
         </TabsContent>
 

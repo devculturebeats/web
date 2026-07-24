@@ -18,7 +18,7 @@ import { createClient } from "@/lib/supabase/client";
 import type { AppRole } from "@/types/database";
 
 const signupSchema = z.object({
-  role: z.enum(["teacher", "student", "school_admin", "academy_admin"]),
+  role: z.enum(["teacher", "student", "parent", "school_admin"]),
   email: z.email("Enter a valid email"),
   password: z.string().min(6, "Password must be at least 6 characters"),
 });

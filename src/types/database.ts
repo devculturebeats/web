@@ -9,6 +9,7 @@ export type Json =
 export type AppRole =
   | "teacher"
   | "student"
+  | "parent"
   | "school_admin"
   | "academy_admin"
   | "superadmin";
@@ -25,6 +26,8 @@ export type ClassLifecycle =
   | "postponed"
   | "completed"
   | "cancelled";
+
+export type SessionOutcome = "held" | "teacher_no_show" | "student_no_show";
 
 export type PreferredClassType = "school" | "academy" | "both";
 
@@ -44,6 +47,7 @@ export interface Database {
           onboarding_completed: boolean;
           username: string | null;
           is_provisioned: boolean;
+          lookup_code: string | null;
           created_at: string;
           updated_at: string;
         };
@@ -59,6 +63,7 @@ export interface Database {
           onboarding_completed?: boolean;
           username?: string | null;
           is_provisioned?: boolean;
+          lookup_code?: string | null;
           created_at?: string;
           updated_at?: string;
         };
@@ -74,6 +79,7 @@ export interface Database {
           onboarding_completed?: boolean;
           username?: string | null;
           is_provisioned?: boolean;
+          lookup_code?: string | null;
           created_at?: string;
           updated_at?: string;
         };
@@ -97,6 +103,8 @@ export interface Database {
           residential_address: string | null;
           preferred_class_types: PreferredClassType | null;
           travel_preference: string | null;
+          discoverable_by_academies: boolean;
+          lookup_code: string;
           created_at: string;
           updated_at: string;
         };
@@ -117,6 +125,8 @@ export interface Database {
           residential_address?: string | null;
           preferred_class_types?: PreferredClassType | null;
           travel_preference?: string | null;
+          discoverable_by_academies?: boolean;
+          lookup_code?: string;
           created_at?: string;
           updated_at?: string;
         };
@@ -137,6 +147,8 @@ export interface Database {
           residential_address?: string | null;
           preferred_class_types?: PreferredClassType | null;
           travel_preference?: string | null;
+          discoverable_by_academies?: boolean;
+          lookup_code?: string;
           created_at?: string;
           updated_at?: string;
         };
@@ -242,6 +254,7 @@ export interface Database {
           contact_email: string | null;
           contact_phone: string | null;
           contact_whatsapp: string | null;
+          lookup_code: string;
           created_at: string;
           updated_at: string;
         };
@@ -263,6 +276,7 @@ export interface Database {
           contact_email?: string | null;
           contact_phone?: string | null;
           contact_whatsapp?: string | null;
+          lookup_code?: string;
           created_at?: string;
           updated_at?: string;
         };
@@ -284,6 +298,7 @@ export interface Database {
           contact_email?: string | null;
           contact_phone?: string | null;
           contact_whatsapp?: string | null;
+          lookup_code?: string;
           created_at?: string;
           updated_at?: string;
         };
@@ -358,6 +373,8 @@ export interface Database {
           proposed_end_time: string | null;
           proposed_slots: Json | null;
           cancellation_reason: string | null;
+          needs_rematch: boolean;
+          rematch_reason: string | null;
           location_type: string | null;
           location_note: string | null;
           rate_amount: number | null;
@@ -390,6 +407,8 @@ export interface Database {
           proposed_end_time?: string | null;
           proposed_slots?: Json | null;
           cancellation_reason?: string | null;
+          needs_rematch?: boolean;
+          rematch_reason?: string | null;
           location_type?: string | null;
           location_note?: string | null;
           rate_amount?: number | null;
@@ -422,6 +441,8 @@ export interface Database {
           proposed_end_time?: string | null;
           proposed_slots?: Json | null;
           cancellation_reason?: string | null;
+          needs_rematch?: boolean;
+          rematch_reason?: string | null;
           location_type?: string | null;
           location_note?: string | null;
           rate_amount?: number | null;
@@ -512,6 +533,45 @@ export interface Database {
             columns: ["teacher_id"];
             isOneToOne: false;
             referencedRelation: "teachers";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+      class_request_messages: {
+        Row: {
+          id: string;
+          request_id: string;
+          author_id: string;
+          body: string;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          request_id: string;
+          author_id: string;
+          body: string;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          request_id?: string;
+          author_id?: string;
+          body?: string;
+          created_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "class_request_messages_request_id_fkey";
+            columns: ["request_id"];
+            isOneToOne: false;
+            referencedRelation: "class_requests";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "class_request_messages_author_id_fkey";
+            columns: ["author_id"];
+            isOneToOne: false;
+            referencedRelation: "profiles";
             referencedColumns: ["id"];
           },
         ];
@@ -655,6 +715,265 @@ export interface Database {
           },
         ];
       };
+      parent_student_links: {
+        Row: {
+          id: string;
+          parent_profile_id: string;
+          student_profile_id: string;
+          organization_id: string | null;
+          created_by: string | null;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          parent_profile_id: string;
+          student_profile_id: string;
+          organization_id?: string | null;
+          created_by?: string | null;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          parent_profile_id?: string;
+          student_profile_id?: string;
+          organization_id?: string | null;
+          created_by?: string | null;
+          created_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "parent_student_links_parent_profile_id_fkey";
+            columns: ["parent_profile_id"];
+            isOneToOne: false;
+            referencedRelation: "profiles";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "parent_student_links_student_profile_id_fkey";
+            columns: ["student_profile_id"];
+            isOneToOne: false;
+            referencedRelation: "profiles";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "parent_student_links_organization_id_fkey";
+            columns: ["organization_id"];
+            isOneToOne: false;
+            referencedRelation: "organizations";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+      parent_link_requests: {
+        Row: {
+          id: string;
+          initiator: "parent" | "student" | "school";
+          parent_profile_id: string | null;
+          parent_email: string | null;
+          student_profile_id: string | null;
+          student_email: string | null;
+          organization_id: string | null;
+          status: ClassLifecycle;
+          message: string | null;
+          created_by: string | null;
+          created_at: string;
+          responded_at: string | null;
+        };
+        Insert: {
+          id?: string;
+          initiator: "parent" | "student" | "school";
+          parent_profile_id?: string | null;
+          parent_email?: string | null;
+          student_profile_id?: string | null;
+          student_email?: string | null;
+          organization_id?: string | null;
+          status?: ClassLifecycle;
+          message?: string | null;
+          created_by?: string | null;
+          created_at?: string;
+          responded_at?: string | null;
+        };
+        Update: {
+          id?: string;
+          initiator?: "parent" | "student" | "school";
+          parent_profile_id?: string | null;
+          parent_email?: string | null;
+          student_profile_id?: string | null;
+          student_email?: string | null;
+          organization_id?: string | null;
+          status?: ClassLifecycle;
+          message?: string | null;
+          created_by?: string | null;
+          created_at?: string;
+          responded_at?: string | null;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "parent_link_requests_parent_profile_id_fkey";
+            columns: ["parent_profile_id"];
+            isOneToOne: false;
+            referencedRelation: "profiles";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "parent_link_requests_student_profile_id_fkey";
+            columns: ["student_profile_id"];
+            isOneToOne: false;
+            referencedRelation: "profiles";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "parent_link_requests_organization_id_fkey";
+            columns: ["organization_id"];
+            isOneToOne: false;
+            referencedRelation: "organizations";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+      teacher_links: {
+        Row: {
+          id: string;
+          organization_id: string;
+          teacher_id: string;
+          teacher_profile_id: string;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          organization_id: string;
+          teacher_id: string;
+          teacher_profile_id: string;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          organization_id?: string;
+          teacher_id?: string;
+          teacher_profile_id?: string;
+          created_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "teacher_links_organization_id_fkey";
+            columns: ["organization_id"];
+            isOneToOne: false;
+            referencedRelation: "organizations";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "teacher_links_teacher_id_fkey";
+            columns: ["teacher_id"];
+            isOneToOne: false;
+            referencedRelation: "teachers";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "teacher_links_teacher_profile_id_fkey";
+            columns: ["teacher_profile_id"];
+            isOneToOne: false;
+            referencedRelation: "profiles";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+      teacher_link_requests: {
+        Row: {
+          id: string;
+          organization_id: string;
+          teacher_id: string | null;
+          teacher_profile_id: string | null;
+          teacher_email: string;
+          status: "requested" | "accepted" | "rejected";
+          created_by: string | null;
+          created_at: string;
+          responded_at: string | null;
+        };
+        Insert: {
+          id?: string;
+          organization_id: string;
+          teacher_id?: string | null;
+          teacher_profile_id?: string | null;
+          teacher_email: string;
+          status?: "requested" | "accepted" | "rejected";
+          created_by?: string | null;
+          created_at?: string;
+          responded_at?: string | null;
+        };
+        Update: {
+          id?: string;
+          organization_id?: string;
+          teacher_id?: string | null;
+          teacher_profile_id?: string | null;
+          teacher_email?: string;
+          status?: "requested" | "accepted" | "rejected";
+          created_by?: string | null;
+          created_at?: string;
+          responded_at?: string | null;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "teacher_link_requests_organization_id_fkey";
+            columns: ["organization_id"];
+            isOneToOne: false;
+            referencedRelation: "organizations";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "teacher_link_requests_teacher_id_fkey";
+            columns: ["teacher_id"];
+            isOneToOne: false;
+            referencedRelation: "teachers";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "teacher_link_requests_teacher_profile_id_fkey";
+            columns: ["teacher_profile_id"];
+            isOneToOne: false;
+            referencedRelation: "profiles";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+      teacher_link_request_messages: {
+        Row: {
+          id: string;
+          request_id: string;
+          author_id: string;
+          body: string;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          request_id: string;
+          author_id: string;
+          body: string;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          request_id?: string;
+          author_id?: string;
+          body?: string;
+          created_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "teacher_link_request_messages_request_id_fkey";
+            columns: ["request_id"];
+            isOneToOne: false;
+            referencedRelation: "teacher_link_requests";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "teacher_link_request_messages_author_id_fkey";
+            columns: ["author_id"];
+            isOneToOne: false;
+            referencedRelation: "profiles";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
       class_sessions: {
         Row: {
           id: string;
@@ -664,6 +983,8 @@ export interface Database {
           status: ClassLifecycle;
           series_id: string | null;
           session_note: string | null;
+          cancellation_reason: string | null;
+          outcome: SessionOutcome | null;
           created_at: string;
         };
         Insert: {
@@ -674,6 +995,8 @@ export interface Database {
           status?: ClassLifecycle;
           series_id?: string | null;
           session_note?: string | null;
+          cancellation_reason?: string | null;
+          outcome?: SessionOutcome | null;
           created_at?: string;
         };
         Update: {
@@ -684,6 +1007,8 @@ export interface Database {
           status?: ClassLifecycle;
           series_id?: string | null;
           session_note?: string | null;
+          cancellation_reason?: string | null;
+          outcome?: SessionOutcome | null;
           created_at?: string;
         };
         Relationships: [
@@ -1007,6 +1332,60 @@ export interface Database {
           slot_end: string;
         }[];
       };
+      search_academy_member_teachers: {
+        Args: {
+          p_organization_id: string;
+          p_name?: string | null;
+          p_skill?: string | null;
+          p_email?: string | null;
+          p_phone?: string | null;
+          p_day_of_week?: number | null;
+          p_start_time?: string | null;
+          p_end_time?: string | null;
+        };
+        Returns: {
+          teacher_id: string;
+          profile_id: string;
+          full_name: string;
+          email: string;
+          phone: string | null;
+          primary_skill: string | null;
+          secondary_skills: string[] | null;
+          city: string | null;
+          years_of_experience: number | null;
+          slot_start: string | null;
+          slot_end: string | null;
+        }[];
+      };
+      search_discoverable_teachers_for_academy: {
+        Args: {
+          p_organization_id: string;
+          p_email?: string | null;
+          p_lookup_code?: string | null;
+        };
+        Returns: {
+          teacher_id: string;
+          profile_id: string;
+          full_name: string;
+          email: string;
+          phone: string | null;
+          lookup_code: string;
+          primary_skill: string | null;
+          secondary_skills: string[] | null;
+          city: string | null;
+          years_of_experience: number | null;
+          already_linked: boolean;
+          invite_pending: boolean;
+        }[];
+      };
+      respond_to_teacher_link_request: {
+        Args: { p_request_id: string; p_accept: boolean };
+        Returns: Database["public"]["Tables"]["teacher_link_requests"]["Row"];
+      };
+      claim_teacher_link_invites: {
+        Args: Record<string, never>;
+        Returns: number;
+      };
       create_class_sessions: {
         Args: {
           p_class_id: string;
@@ -1052,6 +1431,52 @@ export interface Database {
       claim_student_link_invites: {
         Args: Record<string, never>;
         Returns: number;
+      };
+      claim_parent_link_invites: {
+        Args: Record<string, never>;
+        Returns: number;
+      };
+      respond_to_parent_link_request: {
+        Args: {
+          p_request_id: string;
+          p_accept: boolean;
+        };
+        Returns: Database["public"]["Tables"]["parent_link_requests"]["Row"];
+      };
+      request_parent_student_link: {
+        Args: {
+          p_as: "parent" | "student";
+          p_counterpart_email?: string | null;
+          p_counterpart_lookup_code?: string | null;
+          p_message?: string | null;
+        };
+        Returns: Database["public"]["Tables"]["parent_link_requests"]["Row"];
+      };
+      school_attach_parent: {
+        Args: {
+          p_organization_id: string;
+          p_student_profile_id: string;
+          p_parent_email: string;
+          p_parent_full_name?: string | null;
+          p_auto_accept?: boolean;
+        };
+        Returns: Json;
+      };
+      provision_org_parent: {
+        Args: {
+          p_organization_id: string;
+          p_student_profile_id: string;
+          p_full_name: string;
+          p_email?: string | null;
+        };
+        Returns: Json;
+      };
+      issue_parent_login: {
+        Args: {
+          p_organization_id: string;
+          p_parent_profile_id: string;
+        };
+        Returns: Json;
       };
       is_synthetic_student_email: {
         Args: { p_email: string };
@@ -1122,8 +1547,33 @@ export interface Database {
         Args: {
           p_session_id: string;
           p_scope?: string;
+          p_reason?: string | null;
         };
         Returns: number;
+      };
+      mark_session_outcome: {
+        Args: {
+          p_session_id: string;
+          p_outcome: SessionOutcome;
+          p_reason?: string | null;
+        };
+        Returns: Database["public"]["Tables"]["class_sessions"]["Row"];
+      };
+      replace_class_teacher: {
+        Args: {
+          p_class_id: string;
+          p_new_teacher_id: string;
+          p_reason?: string | null;
+          p_require_consent?: boolean;
+        };
+        Returns: Database["public"]["Tables"]["classes"]["Row"];
+      };
+      request_school_rematch: {
+        Args: {
+          p_class_id: string;
+          p_reason?: string | null;
+        };
+        Returns: Database["public"]["Tables"]["classes"]["Row"];
       };
       mark_notification_read: {
         Args: {
@@ -1168,6 +1618,13 @@ export type TeacherDocument =
 export type Organization = Database["public"]["Tables"]["organizations"]["Row"];
 export type Batch = Database["public"]["Tables"]["batches"]["Row"];
 export type StudentLink = Database["public"]["Tables"]["student_links"]["Row"];
+export type ParentStudentLink =
+  Database["public"]["Tables"]["parent_student_links"]["Row"];
+export type ParentLinkRequest =
+  Database["public"]["Tables"]["parent_link_requests"]["Row"];
+export type TeacherLink = Database["public"]["Tables"]["teacher_links"]["Row"];
+export type TeacherLinkRequest =
+  Database["public"]["Tables"]["teacher_link_requests"]["Row"];
 export type ClassSession = Database["public"]["Tables"]["class_sessions"]["Row"];
 export type ClassEnrollment =
   Database["public"]["Tables"]["class_enrollments"]["Row"];
@@ -1189,6 +1646,12 @@ export type SessionScope = "one" | "series";
 
 export type TeacherMatch =
   Database["public"]["Functions"]["match_teachers_for_slot"]["Returns"][number];
+
+export type AcademyMemberTeacher =
+  Database["public"]["Functions"]["search_academy_member_teachers"]["Returns"][number];
+
+export type DiscoverableTeacher =
+  Database["public"]["Functions"]["search_discoverable_teachers_for_academy"]["Returns"][number];
 
 export type ProfileWithTeacher = Profile & {
   teachers: Teacher | Teacher[] | null;

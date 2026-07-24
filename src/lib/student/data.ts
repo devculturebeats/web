@@ -83,6 +83,23 @@ export type StudentDashboardData = {
   myClasses: EnrolledClass[];
   upcomingSessions: UpcomingSession[];
   notifications: StudentNotification[];
+  lookupCode: string | null;
+  parentInvitesIncoming: {
+    id: string;
+    initiator: string;
+    message: string | null;
+    createdAt: string;
+    counterpartName: string;
+    counterpartEmail: string | null;
+  }[];
+  parentInvitesOutgoing: {
+    id: string;
+    initiator: string;
+    message: string | null;
+    createdAt: string;
+    counterpartName: string;
+    counterpartEmail: string | null;
+  }[];
 };
 
 export type BrowseClassesData = {
@@ -187,6 +204,7 @@ export async function loadStudentDashboardData(
 
   // Attach any invites sent to this email before the account existed.
   await supabase.rpc("claim_student_link_invites");
+  await supabase.rpc("claim_parent_link_invites");
 
   const { data: linksData } = await supabase
     .from("student_links")
@@ -209,6 +227,7 @@ export async function loadStudentDashboardData(
     { data: enrollmentsData },
     { data: notificationsData },
     { data: inviteRows },
+    { data: parentRequestRows },
   ] = await Promise.all([
     supabase
       .from("organizations")
@@ -265,6 +284,21 @@ export async function loadStudentDashboardData(
       .eq("student_profile_id", profile.id)
       .eq("status", "requested")
       .order("created_at", { ascending: false }),
+    supabase
+      .from("parent_link_requests")
+      .select(
+        `
+        id,
+        initiator,
+        message,
+        created_at,
+        parent_profile_id,
+        parent_email,
+        parent:parent_profile_id (full_name, email)
+      `,
+      )
+      .eq("student_profile_id", profile.id)
+      .eq("status", "requested"),
   ]);
 
   const enrollments = (enrollmentsData ?? []) as EnrollmentRow[];
@@ -440,6 +474,37 @@ export async function loadStudentDashboardData(
     myClasses: enrichedClasses,
     upcomingSessions,
     notifications,
+    lookupCode: profile.lookup_code ?? null,
+    parentInvitesIncoming: (parentRequestRows ?? [])
+      .filter((row) => row.initiator !== "student")
+      .map((row) => {
+        const parent = (
+          Array.isArray(row.parent) ? row.parent[0] : row.parent
+        ) as { full_name: string; email: string } | null;
+        return {
+          id: row.id,
+          initiator: row.initiator,
+          message: row.message,
+          createdAt: row.created_at,
+          counterpartName: parent?.full_name?.trim() || "Parent",
+          counterpartEmail: parent?.email ?? row.parent_email,
+        };
+      }),
+    parentInvitesOutgoing: (parentRequestRows ?? [])
+      .filter((row) => row.initiator === "student")
+      .map((row) => {
+        const parent = (
+          Array.isArray(row.parent) ? row.parent[0] : row.parent
+        ) as { full_name: string; email: string } | null;
+        return {
+          id: row.id,
+          initiator: row.initiator,
+          message: row.message,
+          createdAt: row.created_at,
+          counterpartName: parent?.full_name?.trim() || "Parent",
+          counterpartEmail: parent?.email ?? row.parent_email,
+        };
+      }),
   };
 }
 

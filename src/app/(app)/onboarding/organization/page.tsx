@@ -17,21 +17,19 @@ export default async function OrganizationOnboardingPage() {
     redirect(orgType === "school" ? "/school" : "/academy");
   }
 
-  const orgLabel = orgType === "school" ? "School" : "Academy";
-
   return (
     <div className="mx-auto max-w-2xl space-y-6">
       <div>
         <h1 className="font-heading text-2xl font-semibold tracking-tight">
-          Set up your {orgLabel.toLowerCase()}
+          Set up your institution
         </h1>
         <p className="mt-2 text-muted-foreground">
-          Tell us about the institution, who is in charge, and how to reach you.
-          We review new organizations before full access is granted.
+          Choose school or academy, then tell us who is in charge and how to
+          reach you. We review new institutions before full access is granted.
         </p>
       </div>
 
-      <OrgOnboardingForm profile={profile} orgLabel={orgLabel} />
+      <OrgOnboardingForm profile={profile} />
     </div>
   );
 }

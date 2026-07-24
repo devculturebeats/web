@@ -7,6 +7,7 @@ import { respondToClassRequest } from "@/app/(app)/teacher/requests/actions";
 import { LifecycleBadge } from "@/components/lifecycle-badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import { PaginatedList } from "@/components/ui/client-pagination";
 import { DAYS_OF_WEEK } from "@/lib/constants";
 import { formatDateTime, formatTime } from "@/lib/dates";
 import { formatRecurrenceLabel } from "@/lib/recurrence";
@@ -119,9 +120,12 @@ function RequestCard({
               <p className="text-sm text-muted-foreground">{proposedSlot}</p>
             )}
             <p className="text-sm text-muted-foreground">{recurrenceLabel}</p>
-            {request.message && (
-              <p className="text-sm text-muted-foreground">{request.message}</p>
-            )}
+            {request.message ? (
+              <p className="text-sm text-muted-foreground">
+                <span className="font-medium text-foreground">Note: </span>
+                {request.message}
+              </p>
+            ) : null}
             <p className="text-xs text-muted-foreground">
               {request.responded_at
                 ? `Responded ${formatDateTime(request.responded_at)}`
@@ -160,11 +164,15 @@ export function ClassRequestList({ pending }: ClassRequestListProps) {
       {pending.length === 0 ? (
         <p className="text-sm text-muted-foreground">No pending requests.</p>
       ) : (
-        <div className="grid gap-3">
-          {pending.map((request) => (
-            <RequestCard key={request.id} request={request} showActions />
-          ))}
-        </div>
+        <PaginatedList items={pending} pageSize={10} label="requests">
+          {(pageItems) => (
+            <div className="grid gap-3">
+              {pageItems.map((request) => (
+                <RequestCard key={request.id} request={request} showActions />
+              ))}
+            </div>
+          )}
+        </PaginatedList>
       )}
     </section>
   );

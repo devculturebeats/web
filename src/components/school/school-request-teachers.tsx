@@ -12,6 +12,7 @@ import {
 } from "@/app/(app)/school/actions";
 import { RecurrenceFields } from "@/components/school/recurrence-fields";
 import { Button } from "@/components/ui/button";
+import { PaginatedList } from "@/components/ui/client-pagination";
 import {
   Dialog,
   DialogContent,
@@ -336,34 +337,38 @@ export function SchoolRequestTeachers({ org }: { org: Organization }) {
               No teachers free for these days and times.
             </p>
           ) : (
-            <ul className="divide-y overflow-hidden rounded-xl border bg-card">
-              {matches.map((match) => (
-                <li
-                  key={match.teacher_id}
-                  className="flex flex-wrap items-center justify-between gap-3 px-4 py-3"
-                >
-                  <div className="min-w-0">
-                    <p className="font-medium">{match.full_name}</p>
-                    <p className="text-sm text-muted-foreground">
-                      {match.primary_skill}
-                      {match.city ? ` · ${match.city}` : ""}
-                      {match.years_of_experience != null
-                        ? ` · ${match.years_of_experience} yrs`
-                        : ""}
-                    </p>
-                  </div>
-                  <div className="flex gap-2">
-                    <Button
-                      size="sm"
-                      disabled={!isApproved || isPending}
-                      onClick={() => openTeacherAction(match)}
+            <PaginatedList items={matches} pageSize={10} label="teachers">
+              {(pageItems) => (
+                <ul className="divide-y overflow-hidden rounded-xl border bg-card">
+                  {pageItems.map((match) => (
+                    <li
+                      key={match.teacher_id}
+                      className="flex flex-wrap items-center justify-between gap-3 px-4 py-3"
                     >
-                      Request
-                    </Button>
-                  </div>
-                </li>
-              ))}
-            </ul>
+                      <div className="min-w-0">
+                        <p className="font-medium">{match.full_name}</p>
+                        <p className="text-sm text-muted-foreground">
+                          {match.primary_skill}
+                          {match.city ? ` · ${match.city}` : ""}
+                          {match.years_of_experience != null
+                            ? ` · ${match.years_of_experience} yrs`
+                            : ""}
+                        </p>
+                      </div>
+                      <div className="flex gap-2">
+                        <Button
+                          size="sm"
+                          disabled={!isApproved || isPending}
+                          onClick={() => openTeacherAction(match)}
+                        >
+                          Request
+                        </Button>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </PaginatedList>
           )}
         </div>
       )}

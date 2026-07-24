@@ -8,6 +8,7 @@ import type { AppRole } from "@/types/database";
 const VALID_ROLES: AppRole[] = [
   "teacher",
   "student",
+  "parent",
   "school_admin",
   "academy_admin",
 ];
@@ -64,6 +65,7 @@ export async function GET(request: Request) {
         .update({
           role: claimedRole,
           approval_status: needsApproval(claimedRole) ? "pending" : "approved",
+          ...(claimedRole === "parent" ? { onboarding_completed: true } : {}),
         })
         .eq("id", user.id);
     }

@@ -16,6 +16,7 @@ import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import {
   Select,
   SelectContent,
@@ -31,6 +32,9 @@ import type { CurrentProfile } from "@/lib/profiles";
 
 const orgFormSchema = z
   .object({
+    org_type: z.enum(["school", "academy"], {
+      message: "Select school or academy",
+    }),
     name: z.string().min(1, "Institution name is required"),
     incharge_name: z.string().min(1, "Incharge name is required"),
     incharge_phone: z
@@ -81,13 +85,9 @@ type OrgFormValues = z.infer<typeof orgFormSchema>;
 
 type OrgOnboardingFormProps = {
   profile: CurrentProfile;
-  orgLabel: string;
 };
 
-export function OrgOnboardingForm({
-  profile,
-  orgLabel,
-}: OrgOnboardingFormProps) {
+export function OrgOnboardingForm({ profile }: OrgOnboardingFormProps) {
   const [isPending, startTransition] = useTransition();
   const [selectedPlace, setSelectedPlace] = useState<SelectedPlace | null>(
     null,
@@ -104,6 +104,7 @@ export function OrgOnboardingForm({
   } = useForm<OrgFormValues>({
     resolver: zodResolver(orgFormSchema),
     defaultValues: {
+      org_type: undefined,
       name: "",
       incharge_name: profile.full_name || "",
       incharge_phone: toLocalPhoneDigits(profile.phone),
@@ -119,6 +120,9 @@ export function OrgOnboardingForm({
     },
   });
 
+  const orgType = watch("org_type");
+  const orgLabel =
+    orgType === "academy" ? "Academy" : orgType === "school" ? "School" : "Institution";
   const inchargeWhatsappSame = watch("incharge_whatsapp_same") !== false;
   const contactWhatsappSame = watch("contact_whatsapp_same") !== false;
   const city = watch("city");
@@ -131,6 +135,7 @@ export function OrgOnboardingForm({
     }
 
     const formData = new FormData();
+    formData.set("org_type", values.org_type);
     formData.set("name", values.name);
     formData.set("incharge_name", values.incharge_name);
     formData.set("incharge_phone", toE164India(values.incharge_phone));
@@ -177,6 +182,53 @@ export function OrgOnboardingForm({
 
   return (
     <form onSubmit={handleSubmit(onSubmit)} className="space-y-8">
+      <section className="space-y-4">
+        <div>
+          <h3 className="font-heading text-base font-semibold">
+            Institution type
+          </h3>
+          <p className="mt-1 text-sm text-muted-foreground">
+            This decides how you book teachers on CultureBeats.
+          </p>
+        </div>
+        <Controller
+          name="org_type"
+          control={control}
+          render={({ field }) => (
+            <RadioGroup
+              value={field.value}
+              onValueChange={field.onChange}
+              className="gap-3"
+            >
+              <label className="flex cursor-pointer gap-3 rounded-xl border border-border px-4 py-3 has-[:checked]:border-foreground">
+                <RadioGroupItem value="school" className="mt-1" />
+                <span>
+                  <span className="block font-medium">School</span>
+                  <span className="mt-0.5 block text-sm text-muted-foreground">
+                    Students already attend your school for regular academics.
+                    Cultural classes (dance, music, etc.) run alongside that
+                    formal education.
+                  </span>
+                </span>
+              </label>
+              <label className="flex cursor-pointer gap-3 rounded-xl border border-border px-4 py-3 has-[:checked]:border-foreground">
+                <RadioGroupItem value="academy" className="mt-1" />
+                <span>
+                  <span className="block font-medium">Academy</span>
+                  <span className="mt-0.5 block text-sm text-muted-foreground">
+                    You mainly run cultural classes — dance, music, theatre, and
+                    similar — not a full academic school.
+                  </span>
+                </span>
+              </label>
+            </RadioGroup>
+          )}
+        />
+        {errors.org_type && (
+          <p className="text-sm text-destructive">{errors.org_type.message}</p>
+        )}
+      </section>
+
       <section className="space-y-4">
         <div>
           <h3 className="font-heading text-base font-semibold">

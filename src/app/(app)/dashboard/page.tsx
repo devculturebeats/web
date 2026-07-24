@@ -389,7 +389,8 @@ export default async function DashboardPage() {
   if (
     profile.role === "school_admin" ||
     profile.role === "academy_admin" ||
-    profile.role === "superadmin"
+    profile.role === "superadmin" ||
+    profile.role === "parent"
   ) {
     redirect(getDashboardPath(profile.role));
   }
@@ -402,8 +403,9 @@ export default async function DashboardPage() {
       <div className="space-y-6">
         <div>
           <h1 className="font-heading text-2xl font-semibold tracking-tight">
-            Hi
-            {profile.full_name ? `, ${profile.full_name.split(" ")[0]}` : ""}
+            {profile.full_name
+              ? `Hi, ${profile.full_name.split(" ")[0]}`
+              : "Hi"}
           </h1>
           <p className="mt-1 text-muted-foreground">
             See what&apos;s coming up this week.

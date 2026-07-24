@@ -12,6 +12,12 @@ import {
   createMarketplaceClass,
   sendNotification,
 } from "@/app/(app)/academy/actions";
+import { AcademyFindTeachers } from "@/components/academy/academy-find-teachers";
+import {
+  AcademyTeachersPanel,
+  type LinkedAcademyTeacher,
+  type PendingTeacherInvite,
+} from "@/components/academy/academy-teachers-panel";
 import { LifecycleBadge } from "@/components/lifecycle-badge";
 import { ApprovalBadge } from "@/components/org/approval-badge";
 import { AuditLogList } from "@/components/admin/audit-log-list";
@@ -21,6 +27,7 @@ import { NotifyPanel } from "@/components/org/notify-panel";
 import { PendingApprovalBanner } from "@/components/org/pending-approval-banner";
 import { StudentsPanel, type LinkedStudent, type PendingStudentInvite } from "@/components/org/students-panel";
 import { Button } from "@/components/ui/button";
+import { PaginatedList } from "@/components/ui/client-pagination";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -75,6 +82,8 @@ type AcademyPortalProps = {
   batches: Batch[];
   students: LinkedStudent[];
   pendingInvites?: PendingStudentInvite[];
+  linkedTeachers: LinkedAcademyTeacher[];
+  pendingTeacherInvites?: PendingTeacherInvite[];
   classes: AcademyClass[];
   teachers: ApprovedTeacher[];
   auditLogs: AuditLogWithActor[];
@@ -85,6 +94,8 @@ export function AcademyPortal({
   batches,
   students,
   pendingInvites = [],
+  linkedTeachers,
+  pendingTeacherInvites = [],
   classes,
   teachers,
   auditLogs,
@@ -151,7 +162,10 @@ export function AcademyPortal({
             {org.name}
           </h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            {[org.city, org.area].filter(Boolean).join(", ") || "Academy portal"}
+            Academy ID {org.lookup_code}
+            {[org.city, org.area].filter(Boolean).length
+              ? ` · ${[org.city, org.area].filter(Boolean).join(", ")}`
+              : ""}
           </p>
         </div>
         <ApprovalBadge status={org.approval_status} />
@@ -162,6 +176,8 @@ export function AcademyPortal({
       <Tabs defaultValue="classes">
         <TabsList className="w-full flex-wrap justify-start">
           <TabsTrigger value="classes">Classes</TabsTrigger>
+          <TabsTrigger value="teachers">Discover teachers</TabsTrigger>
+          <TabsTrigger value="find">Assign teachers</TabsTrigger>
           <TabsTrigger value="batches">Batches</TabsTrigger>
           <TabsTrigger value="students">Students</TabsTrigger>
           <TabsTrigger value="notify">Notify</TabsTrigger>
@@ -410,92 +426,113 @@ export function AcademyPortal({
           {classes.length === 0 ? (
             <p className="text-sm text-muted-foreground">No classes yet.</p>
           ) : (
-            <ul className="space-y-4">
-              {classes.map((cls) => {
-                const upcoming = [...cls.sessions]
-                  .sort(
-                    (a, b) =>
-                      new Date(a.starts_at).getTime() -
-                      new Date(b.starts_at).getTime(),
-                  )
-                  .slice(0, 3);
+            <PaginatedList items={classes} pageSize={10} label="classes">
+              {(pageItems) => (
+                <ul className="space-y-4">
+                  {pageItems.map((cls) => {
+                    const upcoming = [...cls.sessions]
+                      .sort(
+                        (a, b) =>
+                          new Date(a.starts_at).getTime() -
+                          new Date(b.starts_at).getTime(),
+                      )
+                      .slice(0, 3);
 
-                return (
-                  <li key={cls.id} className="rounded-lg border px-4 py-3">
-                    <div className="flex flex-wrap items-start justify-between gap-2">
-                      <div>
-                        <p className="font-medium">
-                          <Link
-                            href={`/classes/${cls.id}`}
-                            className="hover:underline"
-                          >
-                            {cls.title}
-                          </Link>
-                        </p>
-                        <p className="text-sm text-muted-foreground">
-                          {[
-                            cls.skill && cls.skill !== cls.title
-                              ? cls.skill
-                              : null,
-                            cls.teacher?.profiles?.full_name ?? null,
-                          ]
-                            .filter(Boolean)
-                            .join(" · ")}
-                        </p>
-                        {cls.starts_at && (
-                          <p className="mt-1 text-xs text-muted-foreground">
-                            {new Date(cls.starts_at).toLocaleString()}
-                          </p>
-                        )}
-                      </div>
-                      <div className="flex flex-col items-end gap-1">
-                        <div className="flex flex-wrap items-center justify-end gap-2">
-                          <LifecycleBadge status={cls.status} />
-                          {cls.status !== "cancelled" && (
-                            <CancelClassDialog
-                              classTitle={cls.title}
-                              disabled={!isApproved}
-                              onConfirm={(reason) =>
-                                handleCancelClass(cls.id, reason)
-                              }
-                            />
-                          )}
+                    return (
+                      <li key={cls.id} className="rounded-lg border px-4 py-3">
+                        <div className="flex flex-wrap items-start justify-between gap-2">
+                          <div>
+                            <p className="font-medium">
+                              <Link
+                                href={`/classes/${cls.id}`}
+                                className="hover:underline"
+                              >
+                                {cls.title}
+                              </Link>
+                            </p>
+                            <p className="text-sm text-muted-foreground">
+                              {[
+                                cls.skill && cls.skill !== cls.title
+                                  ? cls.skill
+                                  : null,
+                                cls.teacher?.profiles?.full_name ?? null,
+                              ]
+                                .filter(Boolean)
+                                .join(" · ")}
+                            </p>
+                            {cls.starts_at && (
+                              <p className="mt-1 text-xs text-muted-foreground">
+                                {new Date(cls.starts_at).toLocaleString()}
+                              </p>
+                            )}
+                          </div>
+                          <div className="flex flex-col items-end gap-1">
+                            <div className="flex flex-wrap items-center justify-end gap-2">
+                              <LifecycleBadge status={cls.status} />
+                              {cls.status !== "cancelled" && (
+                                <CancelClassDialog
+                                  classTitle={cls.title}
+                                  disabled={!isApproved}
+                                  onConfirm={(reason) =>
+                                    handleCancelClass(cls.id, reason)
+                                  }
+                                />
+                              )}
+                            </div>
+                            <span className="text-xs text-muted-foreground">
+                              {cls.enrollment_count} enrolled
+                            </span>
+                          </div>
                         </div>
-                        <span className="text-xs text-muted-foreground">
-                          {cls.enrollment_count} enrolled
-                        </span>
-                      </div>
-                    </div>
 
-                    {upcoming.length > 0 && (
-                      <div className="mt-3 space-y-2">
-                        <ul className="space-y-1 text-sm text-muted-foreground">
-                          {upcoming.map((session) => (
-                            <li
-                              key={session.id}
-                              className="flex flex-wrap items-center gap-2"
+                        {upcoming.length > 0 && (
+                          <div className="mt-3 space-y-2">
+                            <ul className="space-y-1 text-sm text-muted-foreground">
+                              {upcoming.map((session) => (
+                                <li
+                                  key={session.id}
+                                  className="flex flex-wrap items-center gap-2"
+                                >
+                                  <span>
+                                    {new Date(
+                                      session.starts_at,
+                                    ).toLocaleString()}{" "}
+                                    –{" "}
+                                    {new Date(
+                                      session.ends_at,
+                                    ).toLocaleTimeString()}
+                                  </span>
+                                  <LifecycleBadge status={session.status} />
+                                </li>
+                              ))}
+                            </ul>
+                            <Link
+                              href={`/classes/${cls.id}`}
+                              className="inline-block text-sm font-medium text-primary hover:underline"
                             >
-                              <span>
-                                {new Date(session.starts_at).toLocaleString()} –{" "}
-                                {new Date(session.ends_at).toLocaleTimeString()}
-                              </span>
-                              <LifecycleBadge status={session.status} />
-                            </li>
-                          ))}
-                        </ul>
-                        <Link
-                          href={`/classes/${cls.id}`}
-                          className="inline-block text-sm font-medium text-primary hover:underline"
-                        >
-                          Open class
-                        </Link>
-                      </div>
-                    )}
-                  </li>
-                );
-              })}
-            </ul>
+                              Open class
+                            </Link>
+                          </div>
+                        )}
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
+            </PaginatedList>
           )}
+        </TabsContent>
+
+        <TabsContent value="teachers" className="mt-4">
+          <AcademyTeachersPanel
+            teachers={linkedTeachers}
+            pendingInvites={pendingTeacherInvites}
+            disabled={!isApproved}
+          />
+        </TabsContent>
+
+        <TabsContent value="find" className="mt-4">
+          <AcademyFindTeachers org={org} />
         </TabsContent>
 
         <TabsContent value="batches" className="mt-4">

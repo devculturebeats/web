@@ -40,6 +40,7 @@ export const DAYS_OF_WEEK = [
 export const SIGNUP_ROLES = [
   { value: "teacher", label: "Teacher" },
   { value: "student", label: "Student" },
-  { value: "school_admin", label: "School" },
-  { value: "academy_admin", label: "Academy" },
+  { value: "parent", label: "Parent" },
+  // Stored as school_admin until onboarding picks school vs academy.
+  { value: "school_admin", label: "Institution" },
 ] as const;

@@ -8,6 +8,8 @@ export function getDashboardPath(role: AppRole): string {
       return "/dashboard";
     case "student":
       return "/dashboard";
+    case "parent":
+      return "/parent";
     case "school_admin":
       return "/school";
     case "academy_admin":
@@ -25,6 +27,8 @@ export function getRoleLabel(role: AppRole): string {
       return "Teacher";
     case "student":
       return "Student";
+    case "parent":
+      return "Parent";
     case "school_admin":
       return "School Admin";
     case "academy_admin":
@@ -36,7 +40,12 @@ export function getRoleLabel(role: AppRole): string {
   }
 }
 
-export function getNavLinks(role: AppRole): { href: string; label: string }[] {
+export function getNavLinks(
+  role: AppRole,
+  options?: { orgApproved?: boolean },
+): { href: string; label: string }[] {
+  const orgApproved = options?.orgApproved !== false;
+
   switch (role) {
     case "teacher":
       return [
@@ -49,9 +58,11 @@ export function getNavLinks(role: AppRole): { href: string; label: string }[] {
     case "superadmin":
       return [
         { href: "/admin", label: "Approvals" },
+        { href: "/admin/requests", label: "School requests" },
         { href: "/admin/audit", label: "Audit" },
       ];
     case "school_admin":
+      if (!orgApproved) return [];
       return [
         { href: "/school", label: "Request teacher" },
         { href: "/school/classes", label: "Scheduled classes" },
@@ -59,12 +70,18 @@ export function getNavLinks(role: AppRole): { href: string; label: string }[] {
         { href: "/school/notify", label: "Notify" },
       ];
     case "academy_admin":
+      if (!orgApproved) return [];
       return [{ href: "/academy", label: "Academy" }];
     case "student":
       return [
         { href: "/dashboard", label: "Home" },
         { href: "/student/courses", label: "My Courses" },
         { href: "/student/browse", label: "Browse classes" },
+      ];
+    case "parent":
+      return [
+        { href: "/parent", label: "Home" },
+        { href: "/parent/courses", label: "Classes" },
       ];
     default:
       return [{ href: "/dashboard", label: "Home" }];

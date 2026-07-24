@@ -8,6 +8,8 @@ const PUBLIC_PATHS = new Set(["/", "/login", "/signup", "/forgot-password"]);
 const AUTH_PREFIX = "/auth";
 const ONBOARDING_TEACHER_PATH = "/onboarding/teacher";
 const ONBOARDING_ORG_PATH = "/onboarding/organization";
+const PENDING_APPROVAL_PATH = "/pending-approval";
+const ACCOUNT_PREFIX = "/account";
 
 function isPublicPath(pathname: string): boolean {
   if (PUBLIC_PATHS.has(pathname)) return true;
@@ -16,6 +18,14 @@ function isPublicPath(pathname: string): boolean {
 
 function isAuthPage(pathname: string): boolean {
   return pathname === "/login" || pathname === "/signup";
+}
+
+function isAllowedWhileOrgPending(pathname: string): boolean {
+  return (
+    pathname === PENDING_APPROVAL_PATH ||
+    pathname === ONBOARDING_ORG_PATH ||
+    pathname.startsWith(ACCOUNT_PREFIX)
+  );
 }
 
 async function checkTeacherNeedsOnboarding(
@@ -86,6 +96,30 @@ async function checkOrgAdminNeedsOnboarding(
     .eq("profile_id", userId);
 
   return (count ?? 0) === 0;
+}
+
+async function getOrgApprovalStatus(
+  supabase: ReturnType<typeof createServerClient<Database>>,
+  userId: string,
+): Promise<"approved" | "pending" | "rejected" | null> {
+  const { data: membership } = await supabase
+    .from("organization_members")
+    .select("organizations(approval_status)")
+    .eq("profile_id", userId)
+    .maybeSingle();
+
+  const org = membership?.organizations as
+    | { approval_status: string }
+    | { approval_status: string }[]
+    | null
+    | undefined;
+
+  const row = Array.isArray(org) ? org[0] : org;
+  const status = row?.approval_status;
+  if (status === "approved" || status === "pending" || status === "rejected") {
+    return status;
+  }
+  return null;
 }
 
 export async function updateSession(request: NextRequest) {
@@ -162,15 +196,50 @@ export async function updateSession(request: NextRequest) {
   }
 
   if (!needsOrgOnboarding && pathname === ONBOARDING_ORG_PATH) {
+    const approval = await getOrgApprovalStatus(supabase, user.id);
+    const url = request.nextUrl.clone();
+    url.pathname =
+      approval === "approved"
+        ? getDashboardPath(
+            (
+              (
+                await supabase
+                  .from("profiles")
+                  .select("role")
+                  .eq("id", user.id)
+                  .maybeSingle()
+              ).data?.role ?? "student"
+            ) as AppRole,
+          )
+        : PENDING_APPROVAL_PATH;
+    return NextResponse.redirect(url);
+  }
+
+  // Hard-lock unverified institutions away from all product routes.
+  if (!needsOrgOnboarding) {
     const { data: profile } = await supabase
       .from("profiles")
       .select("role")
       .eq("id", user.id)
       .maybeSingle();
 
-    const url = request.nextUrl.clone();
-    url.pathname = getDashboardPath((profile?.role ?? "student") as AppRole);
-    return NextResponse.redirect(url);
+    if (
+      profile?.role === "school_admin" ||
+      profile?.role === "academy_admin"
+    ) {
+      const approval = await getOrgApprovalStatus(supabase, user.id);
+      if (approval && approval !== "approved") {
+        if (!isAllowedWhileOrgPending(pathname)) {
+          const url = request.nextUrl.clone();
+          url.pathname = PENDING_APPROVAL_PATH;
+          return NextResponse.redirect(url);
+        }
+      } else if (approval === "approved" && pathname === PENDING_APPROVAL_PATH) {
+        const url = request.nextUrl.clone();
+        url.pathname = getDashboardPath(profile.role as AppRole);
+        return NextResponse.redirect(url);
+      }
+    }
   }
 
   if (isAuthPage(pathname)) {
@@ -180,8 +249,18 @@ export async function updateSession(request: NextRequest) {
       .eq("id", user.id)
       .maybeSingle();
 
+    const role = (profile?.role ?? "student") as AppRole;
+    let dest = getDashboardPath(role);
+
+    if (role === "school_admin" || role === "academy_admin") {
+      const approval = await getOrgApprovalStatus(supabase, user.id);
+      if (approval && approval !== "approved") {
+        dest = PENDING_APPROVAL_PATH;
+      }
+    }
+
     const url = request.nextUrl.clone();
-    url.pathname = getDashboardPath((profile?.role ?? "student") as AppRole);
+    url.pathname = dest;
     return NextResponse.redirect(url);
   }
 

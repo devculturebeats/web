@@ -9,6 +9,7 @@ import {
   OnboardingForm,
   RespondInstitutionInviteButtons,
 } from "@/components/student/student-action-buttons";
+import { StudentParentLinks } from "@/components/student/student-parent-links";
 import type {
   InstitutionInvite,
   JoinableOrg,
@@ -17,6 +18,7 @@ import type {
   UpcomingSession,
 } from "@/components/student/types";
 import { Button } from "@/components/ui/button";
+import { PaginatedList } from "@/components/ui/client-pagination";
 import {
   Popover,
   PopoverContent,
@@ -35,6 +37,23 @@ type StudentHomeProps = {
   institutionInvites: InstitutionInvite[];
   upcomingSessions: UpcomingSession[];
   notifications: StudentNotification[];
+  lookupCode?: string | null;
+  parentInvitesIncoming?: {
+    id: string;
+    initiator: string;
+    message: string | null;
+    createdAt: string;
+    counterpartName: string;
+    counterpartEmail: string | null;
+  }[];
+  parentInvitesOutgoing?: {
+    id: string;
+    initiator: string;
+    message: string | null;
+    createdAt: string;
+    counterpartName: string;
+    counterpartEmail: string | null;
+  }[];
 };
 
 function orgTypeLabel(type: string): string {
@@ -129,6 +148,9 @@ export function StudentHome({
   institutionInvites,
   upcomingSessions,
   notifications,
+  lookupCode = null,
+  parentInvitesIncoming = [],
+  parentInvitesOutgoing = [],
 }: StudentHomeProps) {
   const initialUnread = notifications.filter((item) => !item.readAt).length;
   const [showUnreadBanner, setShowUnreadBanner] = useState(initialUnread > 0);
@@ -201,6 +223,12 @@ export function StudentHome({
     <div className="space-y-8">
       {needsProfile && <OnboardingForm />}
 
+      <StudentParentLinks
+        lookupCode={lookupCode}
+        pendingIncoming={parentInvitesIncoming}
+        pendingOutgoing={parentInvitesOutgoing}
+      />
+
       {showUnreadBanner && (
         <button
           type="button"
@@ -230,51 +258,55 @@ export function StudentHome({
             or join your school below.
           </p>
         ) : (
-          <div className="overflow-hidden rounded-xl border bg-card">
-            {upcomingByDay.map((group, index) => (
-              <div
-                key={group.key}
-                className={cn(
-                  "grid grid-cols-[4.5rem_1fr] sm:grid-cols-[5.5rem_1fr]",
-                  index > 0 && "border-t",
-                )}
-              >
-                <div className="flex flex-col items-center justify-start border-r bg-muted/30 px-2 py-4 text-center">
-                  <span className="text-[0.65rem] font-semibold uppercase tracking-wider text-muted-foreground">
-                    {group.weekday}
-                  </span>
-                  <span className="font-heading text-2xl font-semibold tabular-nums leading-none tracking-tight">
-                    {group.day}
-                  </span>
-                  <span className="mt-1 text-[0.65rem] uppercase tracking-wide text-muted-foreground">
-                    {group.month}
-                  </span>
-                </div>
-                <ul className="divide-y">
-                  {group.items.map((session) => (
-                    <li key={session.id} className="px-4 py-3">
-                      <p className="font-medium leading-snug">
-                        <Link
-                          href={`/classes/${session.classId}`}
-                          className="hover:underline"
-                        >
-                          {session.classTitle}
-                        </Link>
-                      </p>
-                      <p className="mt-0.5 text-sm tabular-nums text-muted-foreground">
-                        {sessionTime(session.startsAt)}
-                      </p>
-                      {(session.location || session.orgName) && (
-                        <p className="mt-0.5 text-sm text-muted-foreground">
-                          {session.location || session.orgName}
-                        </p>
-                      )}
-                    </li>
-                  ))}
-                </ul>
+          <PaginatedList items={upcomingByDay} pageSize={5} label="days">
+            {(pageItems) => (
+              <div className="overflow-hidden rounded-xl border bg-card">
+                {pageItems.map((group, index) => (
+                  <div
+                    key={group.key}
+                    className={cn(
+                      "grid grid-cols-[4.5rem_1fr] sm:grid-cols-[5.5rem_1fr]",
+                      index > 0 && "border-t",
+                    )}
+                  >
+                    <div className="flex flex-col items-center justify-start border-r bg-muted/30 px-2 py-4 text-center">
+                      <span className="text-[0.65rem] font-semibold uppercase tracking-wider text-muted-foreground">
+                        {group.weekday}
+                      </span>
+                      <span className="font-heading text-2xl font-semibold tabular-nums leading-none tracking-tight">
+                        {group.day}
+                      </span>
+                      <span className="mt-1 text-[0.65rem] uppercase tracking-wide text-muted-foreground">
+                        {group.month}
+                      </span>
+                    </div>
+                    <ul className="divide-y">
+                      {group.items.map((session) => (
+                        <li key={session.id} className="px-4 py-3">
+                          <p className="font-medium leading-snug">
+                            <Link
+                              href={`/classes/${session.classId}`}
+                              className="hover:underline"
+                            >
+                              {session.classTitle}
+                            </Link>
+                          </p>
+                          <p className="mt-0.5 text-sm tabular-nums text-muted-foreground">
+                            {sessionTime(session.startsAt)}
+                          </p>
+                          {(session.location || session.orgName) && (
+                            <p className="mt-0.5 text-sm text-muted-foreground">
+                              {session.location || session.orgName}
+                            </p>
+                          )}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                ))}
               </div>
-            ))}
-          </div>
+            )}
+          </PaginatedList>
         )}
       </section>
 

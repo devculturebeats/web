@@ -5,7 +5,14 @@ import {
   type AcademyClass,
   type ApprovedTeacher,
 } from "@/components/academy/academy-portal";
-import type { LinkedStudent, PendingStudentInvite } from "@/components/org/students-panel";
+import type {
+  LinkedAcademyTeacher,
+  PendingTeacherInvite,
+} from "@/components/academy/academy-teachers-panel";
+import type {
+  LinkedStudent,
+  PendingStudentInvite,
+} from "@/components/org/students-panel";
 import type { AuditLogWithActor } from "@/lib/audit";
 import { getCurrentProfile } from "@/lib/profiles";
 import { getCurrentOrganization } from "@/lib/orgs";
@@ -67,6 +74,104 @@ export default async function AcademyPage() {
 
   const pendingInvites: PendingStudentInvite[] =
     await loadSchoolPendingStudentInvites(org.id);
+
+  const { data: teacherLinks } = await supabase
+    .from("teacher_links")
+    .select("id, teacher_id, teacher_profile_id, created_at")
+    .eq("organization_id", org.id)
+    .order("created_at", { ascending: false });
+
+  const memberTeacherIds = (teacherLinks ?? []).map((l) => l.teacher_id);
+  const memberProfileIds = (teacherLinks ?? []).map(
+    (l) => l.teacher_profile_id,
+  );
+
+  const { data: memberTeacherRows } =
+    memberTeacherIds.length > 0
+      ? await supabase
+          .from("teachers")
+          .select("id, profile_id, primary_skill, secondary_skills, lookup_code")
+          .in("id", memberTeacherIds)
+      : { data: [] };
+
+  const { data: memberProfiles } =
+    memberProfileIds.length > 0
+      ? await supabase
+          .from("profiles")
+          .select("id, full_name, email, phone")
+          .in("id", memberProfileIds)
+      : { data: [] };
+
+  const memberTeacherMap = Object.fromEntries(
+    (memberTeacherRows ?? []).map((t) => [t.id, t]),
+  );
+  const memberProfileMap = Object.fromEntries(
+    (memberProfiles ?? []).map((p) => [p.id, p]),
+  );
+
+  const linkedTeachers: LinkedAcademyTeacher[] = (teacherLinks ?? []).map(
+    (link) => {
+      const teacher = memberTeacherMap[link.teacher_id];
+      const person = memberProfileMap[link.teacher_profile_id];
+      return {
+        id: link.id,
+        teacher_id: link.teacher_id,
+        teacher_profile_id: link.teacher_profile_id,
+        created_at: link.created_at,
+        teacher: person
+          ? {
+              full_name: person.full_name,
+              email: person.email,
+              phone: person.phone,
+              lookup_code: teacher?.lookup_code ?? "",
+              primary_skill: teacher?.primary_skill ?? null,
+              secondary_skills: teacher?.secondary_skills ?? null,
+            }
+          : null,
+      };
+    },
+  );
+
+  const { data: pendingTeacherRows } = await supabase
+    .from("teacher_link_requests")
+    .select("id, teacher_email, teacher_profile_id, created_at")
+    .eq("organization_id", org.id)
+    .eq("status", "requested")
+    .order("created_at", { ascending: false });
+
+  const pendingTeacherProfileIds = (pendingTeacherRows ?? [])
+    .map((r) => r.teacher_profile_id)
+    .filter((id): id is string => Boolean(id));
+
+  const { data: pendingTeacherProfiles } =
+    pendingTeacherProfileIds.length > 0
+      ? await supabase
+          .from("profiles")
+          .select("id, full_name, email")
+          .in("id", pendingTeacherProfileIds)
+      : { data: [] };
+
+  const pendingTeacherProfileMap = Object.fromEntries(
+    (pendingTeacherProfiles ?? []).map((p) => [p.id, p]),
+  );
+
+  const pendingTeacherInvites: PendingTeacherInvite[] = (
+    pendingTeacherRows ?? []
+  ).map((row) => ({
+    id: row.id,
+    teacher_email: row.teacher_email,
+    teacher_profile_id: row.teacher_profile_id,
+    created_at: row.created_at,
+    teacher: row.teacher_profile_id
+      ? pendingTeacherProfileMap[row.teacher_profile_id]
+        ? {
+            full_name:
+              pendingTeacherProfileMap[row.teacher_profile_id].full_name,
+            email: pendingTeacherProfileMap[row.teacher_profile_id].email,
+          }
+        : null
+      : null,
+  }));
 
   const { data: classRows } = await supabase
     .from("classes")
@@ -149,29 +254,10 @@ export default async function AcademyPage() {
       : null,
   }));
 
-  const { data: approvedProfiles } = await supabase
-    .from("profiles")
-    .select("id, full_name")
-    .eq("role", "teacher")
-    .eq("approval_status", "approved");
-
-  const approvedProfileIds = (approvedProfiles ?? []).map((p) => p.id);
-  const approvedNameMap = Object.fromEntries(
-    (approvedProfiles ?? []).map((p) => [p.id, p.full_name]),
-  );
-
-  const { data: teacherRows } =
-    approvedProfileIds.length > 0
-      ? await supabase
-          .from("teachers")
-          .select("id, profile_id, primary_skill")
-          .in("profile_id", approvedProfileIds)
-      : { data: [] };
-
-  const teachers: ApprovedTeacher[] = (teacherRows ?? []).map((t) => ({
-    id: t.id,
-    primary_skill: t.primary_skill,
-    profiles: { full_name: approvedNameMap[t.profile_id] ?? "Teacher" },
+  const teachers: ApprovedTeacher[] = linkedTeachers.map((link) => ({
+    id: link.teacher_id,
+    primary_skill: link.teacher?.primary_skill ?? null,
+    profiles: { full_name: link.teacher?.full_name ?? "Teacher" },
   }));
 
   const { data: auditLogs } = await supabase
@@ -187,6 +273,8 @@ export default async function AcademyPage() {
       batches={batches ?? []}
       students={students}
       pendingInvites={pendingInvites}
+      linkedTeachers={linkedTeachers}
+      pendingTeacherInvites={pendingTeacherInvites}
       classes={classes}
       teachers={teachers}
       auditLogs={(auditLogs ?? []) as AuditLogWithActor[]}

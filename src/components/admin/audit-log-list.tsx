@@ -4,6 +4,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useState, useTransition } from "react";
 
 import { Button } from "@/components/ui/button";
+import { PaginatedList } from "@/components/ui/client-pagination";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -83,46 +84,50 @@ export function AuditLogList({
       {logs.length === 0 ? (
         <p className="text-sm text-muted-foreground">{emptyMessage}</p>
       ) : (
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>When</TableHead>
-              <TableHead>Action</TableHead>
-              <TableHead>Actor</TableHead>
-              {showOrganization && <TableHead>Organization</TableHead>}
-              <TableHead>Entity</TableHead>
-              <TableHead>Details</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {logs.map((log) => {
-              const details = formatAuditDetails(log.action, log.metadata);
-
-              return (
-                <TableRow key={log.id}>
-                  <TableCell className="text-muted-foreground">
-                    {formatDateTime(log.created_at)}
-                  </TableCell>
-                  <TableCell className="font-medium">
-                    {formatAuditAction(log.action)}
-                  </TableCell>
-                  <TableCell>{formatAuditActor(log.actor)}</TableCell>
-                  {showOrganization && (
-                    <TableCell className="text-muted-foreground">
-                      {log.organization?.name ?? "—"}
-                    </TableCell>
-                  )}
-                  <TableCell className="capitalize text-muted-foreground">
-                    {formatAuditEntityType(log.entity_type)}
-                  </TableCell>
-                  <TableCell className="max-w-xs truncate text-muted-foreground">
-                    {details ?? "—"}
-                  </TableCell>
+        <PaginatedList items={logs} pageSize={25} label="entries">
+          {(pageItems) => (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>When</TableHead>
+                  <TableHead>Action</TableHead>
+                  <TableHead>Actor</TableHead>
+                  {showOrganization && <TableHead>Organization</TableHead>}
+                  <TableHead>Entity</TableHead>
+                  <TableHead>Details</TableHead>
                 </TableRow>
-              );
-            })}
-          </TableBody>
-        </Table>
+              </TableHeader>
+              <TableBody>
+                {pageItems.map((log) => {
+                  const details = formatAuditDetails(log.action, log.metadata);
+
+                  return (
+                    <TableRow key={log.id}>
+                      <TableCell className="text-muted-foreground">
+                        {formatDateTime(log.created_at)}
+                      </TableCell>
+                      <TableCell className="font-medium">
+                        {formatAuditAction(log.action)}
+                      </TableCell>
+                      <TableCell>{formatAuditActor(log.actor)}</TableCell>
+                      {showOrganization && (
+                        <TableCell className="text-muted-foreground">
+                          {log.organization?.name ?? "—"}
+                        </TableCell>
+                      )}
+                      <TableCell className="capitalize text-muted-foreground">
+                        {formatAuditEntityType(log.entity_type)}
+                      </TableCell>
+                      <TableCell className="max-w-xs truncate text-muted-foreground">
+                        {details ?? "—"}
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
+              </TableBody>
+            </Table>
+          )}
+        </PaginatedList>
       )}
     </div>
   );

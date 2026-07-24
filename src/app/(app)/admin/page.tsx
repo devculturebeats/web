@@ -17,13 +17,13 @@ export default async function AdminPage() {
   const [{ data: pendingTeachers }, { data: pendingOrgs }] = await Promise.all([
     supabase
       .from("profiles")
-      .select("id, email, full_name, phone, approval_status, created_at, teachers(primary_skill, city)")
+      .select("id, email, full_name, phone, approval_status, created_at, teachers(primary_skill, city, lookup_code)")
       .eq("role", "teacher")
       .eq("approval_status", "pending")
       .order("created_at", { ascending: false }),
     supabase
       .from("organizations")
-      .select("id, name, type, city, approval_status, created_at")
+      .select("id, name, type, city, lookup_code, approval_status, created_at")
       .eq("approval_status", "pending")
       .order("created_at", { ascending: false }),
   ]);
@@ -39,6 +39,12 @@ export default async function AdminPage() {
             Clear the queue — teachers and organizations waiting to join.
           </p>
         </div>
+        <Link
+          href="/admin/requests"
+          className={cn(buttonVariants({ variant: "outline" }))}
+        >
+          School requests
+        </Link>
         <Link
           href="/admin/audit"
           className={cn(buttonVariants({ variant: "outline" }))}

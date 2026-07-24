@@ -6,9 +6,18 @@ const ACTION_LABELS: Record<string, string> = {
   "approval.organization": "Organization approval",
   "class.cancel": "Class cancelled",
   "class.sessions_created": "Sessions created",
+  "class.teacher_replace": "Teacher replaced",
+  "class.teacher_replace_request": "Replacement requested",
+  "class.rematch_requested": "Rematch requested",
+  "parent.link_request": "Parent link requested",
+  "parent.link_accept": "Parent link accepted",
+  "parent.school_attach": "Parent attached by school",
+  "parent.school_invite": "Parent invited by school",
+  "parent.provision": "Parent provisioned",
   "enrollment.create": "Student enrolled",
   "session.reschedule": "Session rescheduled",
   "session.cancel": "Session cancelled",
+  "session.outcome": "Session outcome",
 };
 
 export function formatAuditAction(action: string): string {
@@ -73,11 +82,35 @@ export function formatAuditDetails(
       return null;
     case "session.cancel": {
       const affected = m.affected;
+      const reason = m.reason ? String(m.reason) : null;
       if (typeof affected === "number") {
-        return affected === 1 ? "1 session" : `${affected} sessions`;
+        const count =
+          affected === 1 ? "1 session" : `${affected} sessions`;
+        return reason ? `${count} · ${reason}` : count;
       }
+      if (reason) return reason;
       return m.scope === "series" ? "Entire series" : null;
     }
+    case "session.outcome": {
+      const outcome = m.outcome ? String(m.outcome).replace(/_/g, " ") : null;
+      const reason = m.reason ? String(m.reason) : null;
+      if (outcome && reason) return `${outcome} · ${reason}`;
+      return outcome ?? reason;
+    }
+    case "class.teacher_replace":
+    case "class.teacher_replace_request": {
+      const reason = m.reason ? String(m.reason) : null;
+      if (m.direct === true) {
+        return reason ? `Direct · ${reason}` : "Direct swap";
+      }
+      return reason;
+    }
+    case "class.rematch_requested":
+      return m.reason
+        ? String(m.reason)
+        : m.title
+          ? String(m.title)
+          : null;
     default:
       return null;
   }

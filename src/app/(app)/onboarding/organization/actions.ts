@@ -4,7 +4,6 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 
 import { ART_SKILLS } from "@/lib/constants";
-import { getDashboardPath } from "@/lib/auth/roles";
 import { SERVICE_CITY_VALUES } from "@/lib/locations";
 import { orgTypeForRole } from "@/lib/orgs";
 import { createClient } from "@/lib/supabase/server";
@@ -37,12 +36,17 @@ export async function completeOrgOnboarding(
 
   if (!profile) return { error: "Profile not found." };
 
-  const orgType = orgTypeForRole(profile.role as AppRole);
-  if (!orgType) {
+  const orgTypeFromRole = orgTypeForRole(profile.role as AppRole);
+  if (!orgTypeFromRole) {
     return { error: "Only school or academy admins can register an organization." };
   }
 
   const name = (formData.get("name") as string)?.trim();
+  const orgTypeInput = (formData.get("org_type") as string)?.trim();
+  const orgType =
+    orgTypeInput === "school" || orgTypeInput === "academy"
+      ? orgTypeInput
+      : null;
   const inchargeName = (formData.get("incharge_name") as string)?.trim();
   const inchargePhone = (formData.get("incharge_phone") as string)?.trim();
   const inchargeWhatsappSame =
@@ -67,6 +71,7 @@ export async function completeOrgOnboarding(
     .filter((v) => ALLOWED_ACTIVITIES.has(v));
 
   if (!name) return { error: "Institution name is required." };
+  if (!orgType) return { error: "Select school or academy." };
   if (!inchargeName) return { error: "Incharge name is required." };
   if (!inchargePhone) return { error: "Incharge mobile number is required." };
   if (!city || !(SERVICE_CITY_VALUES as readonly string[]).includes(city)) {
@@ -133,9 +138,13 @@ export async function completeOrgOnboarding(
     return { error: memberError.message };
   }
 
+  const resolvedRole: AppRole =
+    orgType === "academy" ? "academy_admin" : "school_admin";
+
   const { error: profileError } = await supabase
     .from("profiles")
     .update({
+      role: resolvedRole,
       full_name: inchargeName,
       phone: inchargePhone,
       whatsapp: inchargeWhatsapp,
@@ -151,6 +160,7 @@ export async function completeOrgOnboarding(
   revalidatePath("/school");
   revalidatePath("/academy");
   revalidatePath("/dashboard");
+  revalidatePath("/pending-approval");
 
-  redirect(getDashboardPath(profile.role as AppRole));
+  redirect("/pending-approval");
 }
