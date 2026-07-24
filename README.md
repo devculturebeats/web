@@ -25,6 +25,7 @@ All passwords: `Test1234!`
 | `school@culturebeats.test` | School admin | Batches, request/match teachers, sessions |
 | `academy@culturebeats.test` | Academy admin | Marketplace classes, enrollments |
 | `student@culturebeats.test` | Student | Linked orgs, enroll, sessions, attendance |
+| `parent@culturebeats.test` | Parent | Linked to Meera Student — schedule + classes (read-only) |
 
 Seeded sample data includes: Horizon Public School, Nritya Studio Academy, a pending dance class request for teacher1, a self-enroll folk dance lab, and an assigned school music class with the demo student enrolled.
 

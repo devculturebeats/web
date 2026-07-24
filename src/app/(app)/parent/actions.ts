@@ -179,15 +179,6 @@ export async function loadParentHomeData(parentId: string): Promise<{
     children[0]?.studentProfileId ??
     null;
 
-  if (selectedChildId && selectedChildId !== cookieId) {
-    jar.set(PARENT_SELECTED_STUDENT_COOKIE, selectedChildId, {
-      path: "/",
-      sameSite: "lax",
-      httpOnly: true,
-      maxAge: 60 * 60 * 24 * 365,
-    });
-  }
-
   const { data: requestRows } = await supabase
     .from("parent_link_requests")
     .select(
