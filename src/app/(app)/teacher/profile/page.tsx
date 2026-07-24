@@ -42,24 +42,26 @@ export default async function TeacherProfilePage() {
         </CardContent>
       </Card>
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="font-heading text-lg">
-            Academy discovery
-          </CardTitle>
-          <CardDescription>
-            Choose whether academies can find you by email or teacher ID and
-            invite you to join.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <TeacherDiscoverabilitySetting
-            initialDiscoverable={
-              profile.teacher?.discoverable_by_academies ?? true
-            }
-          />
-        </CardContent>
-      </Card>
+      {profile.approval_status === "approved" && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="font-heading text-lg">
+              Academy discovery
+            </CardTitle>
+            <CardDescription>
+              Choose whether academies can find you by email or teacher ID and
+              invite you to join.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <TeacherDiscoverabilitySetting
+              initialDiscoverable={
+                profile.teacher?.discoverable_by_academies ?? true
+              }
+            />
+          </CardContent>
+        </Card>
+      )}
 
       <Card>
         <CardHeader>

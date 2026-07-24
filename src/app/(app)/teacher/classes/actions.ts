@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 
+import { requireApprovedTeacher } from "@/lib/auth/teacher-gate";
 import { getCurrentProfile } from "@/lib/profiles";
 import { createClient } from "@/lib/supabase/server";
 import type { ClassLifecycle } from "@/types/database";
@@ -240,12 +241,10 @@ export async function updateSessionStatus(
     return { error: "Invalid session status." };
   }
 
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) return { error: "Not authenticated." };
+  const gate = await requireApprovedTeacher();
+  if (!gate.ok) return { error: gate.error };
 
+  const supabase = await createClient();
   const { error } = await supabase.rpc("update_session_status", {
     p_session_id: sessionId,
     p_status: status,
@@ -266,12 +265,10 @@ export async function markAttendance(
   sessionId: string,
   records: AttendanceRecord[],
 ): Promise<ClassActionState> {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) return { error: "Not authenticated." };
+  const gate = await requireApprovedTeacher();
+  if (!gate.ok) return { error: gate.error };
 
+  const supabase = await createClient();
   if (records.length === 0) {
     return { error: "No attendance records provided." };
   }
@@ -280,7 +277,7 @@ export async function markAttendance(
     session_id: sessionId,
     student_profile_id: record.studentProfileId,
     present: record.present,
-    marked_by: user.id,
+    marked_by: gate.profile.id,
     marked_at: new Date().toISOString(),
   }));
 
@@ -306,12 +303,10 @@ export async function postponeSessionTo(
     return { error: "End time must be after start time." };
   }
 
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) return { error: "Not authenticated." };
+  const gate = await requireApprovedTeacher();
+  if (!gate.ok) return { error: gate.error };
 
+  const supabase = await createClient();
   const { data: session } = await supabase
     .from("class_sessions")
     .select("class_id")
@@ -346,12 +341,10 @@ export async function rescheduleSession(
     return { error: "End time must be after start time." };
   }
 
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) return { error: "Not authenticated." };
+  const gate = await requireApprovedTeacher();
+  if (!gate.ok) return { error: gate.error };
 
+  const supabase = await createClient();
   const { data: session } = await supabase
     .from("class_sessions")
     .select("class_id")
@@ -376,12 +369,10 @@ export async function cancelClass(
   classId: string,
   reason?: string | null,
 ): Promise<ClassActionState> {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) return { error: "Not authenticated." };
+  const gate = await requireApprovedTeacher();
+  if (!gate.ok) return { error: gate.error };
 
+  const supabase = await createClient();
   const { error } = await supabase.rpc("cancel_class", {
     p_class_id: classId,
     p_reason: reason?.trim() || null,

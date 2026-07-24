@@ -19,15 +19,17 @@ import { cn } from "@/lib/utils";
 export function AppNav({
   profile,
   orgApproved = true,
+  teacherApproved = true,
 }: {
   profile: CurrentProfile;
   orgApproved?: boolean;
+  teacherApproved?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   // Defer Sheet until after mount so Base UI ids don't hydrate-mismatch.
   const [menuReady, setMenuReady] = useState(false);
   const pathname = usePathname();
-  const navLinks = getNavLinks(profile.role, { orgApproved });
+  const navLinks = getNavLinks(profile.role, { orgApproved, teacherApproved });
   const homeHref =
     !orgApproved &&
     (profile.role === "school_admin" || profile.role === "academy_admin")

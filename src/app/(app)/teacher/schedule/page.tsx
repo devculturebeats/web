@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 
 import { AvailabilityManager } from "@/components/teacher/availability-manager";
+import { isTeacherApproved } from "@/lib/auth/teacher-gate";
 import { getCurrentProfile } from "@/lib/profiles";
 import { createClient } from "@/lib/supabase/server";
 import type { TeacherAvailability } from "@/types/database";
@@ -9,6 +10,7 @@ export default async function TeacherSchedulePage() {
   const profile = await getCurrentProfile();
   if (!profile) redirect("/login");
   if (profile.role !== "teacher") redirect("/dashboard");
+  if (!isTeacherApproved(profile)) redirect("/dashboard");
 
   const supabase = await createClient();
   const teacherId = profile.teacher?.id;

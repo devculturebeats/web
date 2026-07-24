@@ -7,6 +7,7 @@ import {
   type TeacherClassData,
 } from "@/components/teacher/classes-manager";
 import { formatClassRate, formatLocationType } from "@/lib/class-pricing";
+import { isTeacherApproved } from "@/lib/auth/teacher-gate";
 import { getCurrentProfile } from "@/lib/profiles";
 import { createClient } from "@/lib/supabase/server";
 import type { Attendance, ClassSession } from "@/types/database";
@@ -42,6 +43,7 @@ export default async function TeacherClassesPage() {
   const profile = await getCurrentProfile();
   if (!profile) redirect("/login");
   if (profile.role !== "teacher") redirect("/dashboard");
+  if (!isTeacherApproved(profile)) redirect("/dashboard");
 
   const teacherId = profile.teacher?.id;
   if (!teacherId) {

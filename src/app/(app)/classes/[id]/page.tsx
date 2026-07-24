@@ -143,6 +143,12 @@ export default async function ClassDetailPage({
   const { id: classId } = await params;
   const profile = await getCurrentProfile();
   if (!profile) redirect("/login");
+  if (
+    profile.role === "teacher" &&
+    profile.approval_status !== "approved"
+  ) {
+    redirect("/dashboard");
+  }
 
   const supabase = await createClient();
   const { data: classRow } = await supabase

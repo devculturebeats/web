@@ -2,6 +2,7 @@ import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 
 import { getDashboardPath } from "@/lib/auth/roles";
+import { isAllowedWhileTeacherPending } from "@/lib/auth/teacher-gate";
 import type { AppRole, Database } from "@/types/database";
 
 const PUBLIC_PATHS = new Set(["/", "/login", "/signup", "/forgot-password"]);
@@ -182,6 +183,25 @@ export async function updateSession(request: NextRequest) {
     const url = request.nextUrl.clone();
     url.pathname = "/dashboard";
     return NextResponse.redirect(url);
+  }
+
+  // Hard-lock unapproved teachers away from product routes (schedule, classes, etc.).
+  if (!needsTeacherOnboarding) {
+    const { data: teacherProfile } = await supabase
+      .from("profiles")
+      .select("role, approval_status")
+      .eq("id", user.id)
+      .maybeSingle();
+
+    if (
+      teacherProfile?.role === "teacher" &&
+      teacherProfile.approval_status !== "approved" &&
+      !isAllowedWhileTeacherPending(pathname)
+    ) {
+      const url = request.nextUrl.clone();
+      url.pathname = "/dashboard";
+      return NextResponse.redirect(url);
+    }
   }
 
   const needsOrgOnboarding = await checkOrgAdminNeedsOnboarding(

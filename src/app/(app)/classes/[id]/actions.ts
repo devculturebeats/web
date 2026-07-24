@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 
+import { rejectIfUnapprovedTeacher } from "@/lib/auth/teacher-gate";
 import { createClient } from "@/lib/supabase/server";
 import type {
   ClassLifecycle,
@@ -26,6 +27,11 @@ const SESSION_OUTCOMES: SessionOutcome[] = [
   "teacher_no_show",
   "student_no_show",
 ];
+
+async function guardUnapprovedTeacher(): Promise<ClassDetailActionState | null> {
+  const error = await rejectIfUnapprovedTeacher();
+  return error ? { error } : null;
+}
 
 function revalidateClass(classId: string) {
   revalidatePath(`/classes/${classId}`);
@@ -65,6 +71,9 @@ export async function addNote(
   classId: string,
   body: string,
 ): Promise<ClassDetailActionState> {
+  const blocked = await guardUnapprovedTeacher();
+  if (blocked) return blocked;
+
   const trimmed = body.trim();
   if (!trimmed) return { error: "Note cannot be empty." };
 
@@ -90,6 +99,9 @@ export async function deleteNote(
   noteId: string,
   classId: string,
 ): Promise<ClassDetailActionState> {
+  const blocked = await guardUnapprovedTeacher();
+  if (blocked) return blocked;
+
   const supabase = await createClient();
   const { error } = await supabase.from("class_notes").delete().eq("id", noteId);
 
@@ -104,6 +116,9 @@ export async function postponeSessionTo(
   startsAt: string,
   endsAt: string,
 ): Promise<ClassDetailActionState> {
+  const blocked = await guardUnapprovedTeacher();
+  if (blocked) return blocked;
+
   if (!startsAt || !endsAt) {
     return { error: "Choose when to postpone to." };
   }
@@ -143,6 +158,9 @@ export async function rescheduleSession(
   endsAt: string,
   scope: SessionScope = "one",
 ): Promise<ClassDetailActionState> {
+  const blocked = await guardUnapprovedTeacher();
+  if (blocked) return blocked;
+
   if (!startsAt || !endsAt) {
     return { error: "Start and end times are required." };
   }
@@ -181,6 +199,9 @@ export async function cancelSessionsScoped(
   scope: SessionScope = "one",
   reason?: string | null,
 ): Promise<ClassDetailActionState> {
+  const blocked = await guardUnapprovedTeacher();
+  if (blocked) return blocked;
+
   const supabase = await createClient();
   const {
     data: { user },
@@ -222,6 +243,9 @@ export async function markSessionOutcome(
   outcome: SessionOutcome,
   reason?: string | null,
 ): Promise<ClassDetailActionState> {
+  const blocked = await guardUnapprovedTeacher();
+  if (blocked) return blocked;
+
   if (!SESSION_OUTCOMES.includes(outcome)) {
     return { error: "Invalid session outcome." };
   }
@@ -285,6 +309,9 @@ export type ReplacementCandidate = {
 export async function listReplacementTeachers(
   classId: string,
 ): Promise<ClassDetailActionState & { teachers?: ReplacementCandidate[] }> {
+  const blocked = await guardUnapprovedTeacher();
+  if (blocked) return blocked;
+
   const supabase = await createClient();
   const {
     data: { user },
@@ -393,6 +420,9 @@ export async function requestTeacherReplacement(
   reason?: string | null,
   options?: { direct?: boolean },
 ): Promise<ClassDetailActionState> {
+  const blocked = await guardUnapprovedTeacher();
+  if (blocked) return blocked;
+
   if (!teacherId) return { error: "Choose a teacher." };
 
   const supabase = await createClient();
@@ -428,6 +458,9 @@ export async function requestSchoolRematch(
   classId: string,
   reason?: string | null,
 ): Promise<ClassDetailActionState> {
+  const blocked = await guardUnapprovedTeacher();
+  if (blocked) return blocked;
+
   const supabase = await createClient();
   const {
     data: { user },
@@ -456,6 +489,9 @@ export async function updateSessionStatus(
   sessionId: string,
   status: ClassLifecycle,
 ): Promise<ClassDetailActionState> {
+  const blocked = await guardUnapprovedTeacher();
+  if (blocked) return blocked;
+
   if (!SESSION_STATUSES.includes(status)) {
     return { error: "Invalid session status." };
   }
@@ -492,6 +528,9 @@ export async function markAttendance(
   sessionId: string,
   records: AttendanceRecord[],
 ): Promise<ClassDetailActionState> {
+  const blocked = await guardUnapprovedTeacher();
+  if (blocked) return blocked;
+
   const supabase = await createClient();
   const {
     data: { user },
@@ -532,6 +571,9 @@ export async function scheduleClassSessions(
   endsAt: string,
   recurringWeeks = 0,
 ): Promise<ClassDetailActionState> {
+  const blocked = await guardUnapprovedTeacher();
+  if (blocked) return blocked;
+
   if (!startsAt || !endsAt) {
     return { error: "Choose when the first meeting starts and ends." };
   }
@@ -562,6 +604,9 @@ export async function cancelClass(
   classId: string,
   reason?: string | null,
 ): Promise<ClassDetailActionState> {
+  const blocked = await guardUnapprovedTeacher();
+  if (blocked) return blocked;
+
   const supabase = await createClient();
   const {
     data: { user },

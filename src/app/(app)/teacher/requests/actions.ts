@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 
+import { requireApprovedTeacher } from "@/lib/auth/teacher-gate";
 import { createClient } from "@/lib/supabase/server";
 
 export type RequestActionState = {
@@ -13,12 +14,10 @@ export async function respondToClassRequest(
   requestId: string,
   accept: boolean,
 ): Promise<RequestActionState> {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) return { error: "Not authenticated." };
+  const gate = await requireApprovedTeacher();
+  if (!gate.ok) return { error: gate.error };
 
+  const supabase = await createClient();
   const { error } = await supabase.rpc("respond_to_class_request", {
     p_request_id: requestId,
     p_accept: accept,
@@ -37,12 +36,10 @@ export async function respondToAcademyInvite(
   requestId: string,
   accept: boolean,
 ): Promise<RequestActionState> {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) return { error: "Not authenticated." };
+  const gate = await requireApprovedTeacher();
+  if (!gate.ok) return { error: gate.error };
 
+  const supabase = await createClient();
   await supabase.rpc("claim_teacher_link_invites");
 
   const { error } = await supabase.rpc("respond_to_teacher_link_request", {

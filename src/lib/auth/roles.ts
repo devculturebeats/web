@@ -42,12 +42,19 @@ export function getRoleLabel(role: AppRole): string {
 
 export function getNavLinks(
   role: AppRole,
-  options?: { orgApproved?: boolean },
+  options?: { orgApproved?: boolean; teacherApproved?: boolean },
 ): { href: string; label: string }[] {
   const orgApproved = options?.orgApproved !== false;
+  const teacherApproved = options?.teacherApproved !== false;
 
   switch (role) {
     case "teacher":
+      if (!teacherApproved) {
+        return [
+          { href: "/dashboard", label: "Home" },
+          { href: "/teacher/profile", label: "Profile" },
+        ];
+      }
       return [
         { href: "/dashboard", label: "Home" },
         { href: "/teacher/requests", label: "Requests" },

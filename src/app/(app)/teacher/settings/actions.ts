@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 
-import { getCurrentProfile } from "@/lib/profiles";
+import { requireApprovedTeacher } from "@/lib/auth/teacher-gate";
 import { createClient } from "@/lib/supabase/server";
 
 export type TeacherSettingsState = {
@@ -13,8 +13,9 @@ export type TeacherSettingsState = {
 export async function updateAcademyDiscoverability(
   discoverable: boolean,
 ): Promise<TeacherSettingsState> {
-  const profile = await getCurrentProfile();
-  if (!profile || profile.role !== "teacher" || !profile.teacher?.id) {
+  const gate = await requireApprovedTeacher();
+  if (!gate.ok) return { error: gate.error };
+  if (!gate.profile.teacher?.id) {
     return { error: "Teacher profile not found." };
   }
 
@@ -22,8 +23,8 @@ export async function updateAcademyDiscoverability(
   const { error } = await supabase
     .from("teachers")
     .update({ discoverable_by_academies: discoverable })
-    .eq("id", profile.teacher.id)
-    .eq("profile_id", profile.id);
+    .eq("id", gate.profile.teacher.id)
+    .eq("profile_id", gate.profile.id);
 
   if (error) return { error: error.message };
 

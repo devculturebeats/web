@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 
+import { requireApprovedTeacher } from "@/lib/auth/teacher-gate";
 import { createClient } from "@/lib/supabase/server";
 import type { AvailabilityConflict } from "@/types/database";
 
@@ -12,20 +13,14 @@ export type ScheduleActionState = {
   requiresConfirmation?: boolean;
 };
 
-async function getTeacherId(): Promise<string | null> {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) return null;
-
-  const { data: teacher } = await supabase
-    .from("teachers")
-    .select("id")
-    .eq("profile_id", user.id)
-    .maybeSingle();
-
-  return teacher?.id ?? null;
+async function getApprovedTeacherId(): Promise<
+  { teacherId: string } | { error: string }
+> {
+  const gate = await requireApprovedTeacher();
+  if (!gate.ok) return { error: gate.error };
+  const teacherId = gate.profile.teacher?.id;
+  if (!teacherId) return { error: "Teacher profile not found." };
+  return { teacherId };
 }
 
 function isValidTimeRange(startTime: string, endTime: string): boolean {
@@ -107,8 +102,9 @@ async function checkSlotConflicts(
 export async function createAvailabilitySlot(
   formData: FormData,
 ): Promise<ScheduleActionState> {
-  const teacherId = await getTeacherId();
-  if (!teacherId) return { error: "Teacher profile not found." };
+  const gate = await getApprovedTeacherId();
+  if ("error" in gate) return { error: gate.error };
+  const { teacherId } = gate;
 
   const dayOfWeek = parseInt(formData.get("day_of_week") as string, 10);
   const startTime = formData.get("start_time") as string;
@@ -159,8 +155,9 @@ export async function createAvailabilitySlot(
 export async function updateAvailabilitySlot(
   formData: FormData,
 ): Promise<ScheduleActionState> {
-  const teacherId = await getTeacherId();
-  if (!teacherId) return { error: "Teacher profile not found." };
+  const gate = await getApprovedTeacherId();
+  if ("error" in gate) return { error: gate.error };
+  const { teacherId } = gate;
 
   const slotId = formData.get("id") as string;
   const dayOfWeek = parseInt(formData.get("day_of_week") as string, 10);
@@ -231,8 +228,9 @@ export async function updateAvailabilitySlot(
 export async function deleteAvailabilitySlot(
   formData: FormData,
 ): Promise<ScheduleActionState> {
-  const teacherId = await getTeacherId();
-  if (!teacherId) return { error: "Teacher profile not found." };
+  const gate = await getApprovedTeacherId();
+  if ("error" in gate) return { error: gate.error };
+  const { teacherId } = gate;
 
   const slotId = formData.get("id") as string;
   const force = formData.get("force") === "true";

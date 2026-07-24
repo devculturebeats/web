@@ -7,6 +7,7 @@ import {
 } from "@/components/teacher/academy-invite-list";
 import { ClassRequestList } from "@/components/teacher/class-request-list";
 import type { ClassRequestWithDetails } from "@/components/teacher/class-request-list";
+import { isTeacherApproved } from "@/lib/auth/teacher-gate";
 import { getCurrentProfile } from "@/lib/profiles";
 import { createClient } from "@/lib/supabase/server";
 
@@ -14,6 +15,7 @@ export default async function TeacherRequestsPage() {
   const profile = await getCurrentProfile();
   if (!profile) redirect("/login");
   if (profile.role !== "teacher") redirect("/dashboard");
+  if (!isTeacherApproved(profile)) redirect("/dashboard");
 
   const teacherId = profile.teacher?.id;
   if (!teacherId) {
